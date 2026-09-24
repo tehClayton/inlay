@@ -1,0 +1,5 @@
+# Every change requires review from the repository owner.
+# On the Free plan this auto-requests review (advisory); it becomes
+# an enforced gate automatically if the repo ever moves to GitHub Pro
+# with "Require review from Code Owners" enabled.
+* @tehClayton
