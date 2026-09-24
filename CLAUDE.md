@@ -3,7 +3,8 @@
 Guidance for working in this repository.
 
 inlay is a static, dependency-free web app for learning the fretboard of a stringed
-instrument, served from the repo root by GitHub Pages.
+instrument, served from the repo root by GitHub Pages. [DESIGN.md](DESIGN.md) is the
+product and architecture reference and defines the milestones.
 
 ## Branching & pull requests
 
@@ -11,7 +12,7 @@ Never commit directly to `main` — always branch first.
 
 ### Milestone work (stacked branches)
 
-Work that maps to a milestone in the project's design doc is split into a
+Work that maps to a milestone in [DESIGN.md](DESIGN.md#milestones) is split into a
 stack of small branches:
 
 ```
