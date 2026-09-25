@@ -4,9 +4,10 @@
    deployed files as text and check the list is complete. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { readFileSync, existsSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = f => readFileSync(join(ROOT, f), "utf8");
@@ -66,5 +67,29 @@ test("the manifest's icons are cached", () => {
 test("every cached module parses", async () => {
   for (const f of ASSETS.filter(f => f.endsWith(".js"))){
     await import(join(ROOT, f));
+  }
+});
+
+/* A page's own logic lives in an inline module script, which nothing else
+   parses before a browser does. Each one is written out with its relative
+   imports made absolute and loaded here. It then fails at run time, reaching
+   for `document`, and that is fine: only a SyntaxError means the code itself
+   is broken. */
+test("every page's inline module script parses", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "inlay-"));
+  try {
+    for (const page of ASSETS.filter(f => f.endsWith(".html"))){
+      const scripts = [...read(page).matchAll(/<script type="module">([\s\S]*?)<\/script>/g)];
+      for (const [i, [, code]] of scripts.entries()){
+        const file = join(dir, `${page}.${i}.mjs`);
+        writeFileSync(file, code.replace(/from\s+"\.\/([^"]+)"/g,
+          (_, f) => `from "${pathToFileURL(join(ROOT, f)).href}"`));
+        await import(pathToFileURL(file).href).catch(e => {
+          if (e instanceof SyntaxError) throw new Error(`${page} inline script ${i}: ${e.message}`);
+        });
+      }
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
