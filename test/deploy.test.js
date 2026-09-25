@@ -4,7 +4,7 @@
    deployed files as text and check the list is complete. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -46,6 +46,13 @@ test("every file a page or module loads is cached", () => {
       assert.ok(ASSETS.includes(ref), `${page} loads ${ref}, which sw.js does not cache`);
     }
   }
+});
+
+/* Catches a module added at the root before any page imports it, which the
+   check above cannot see. sw.js is the worker itself, not an asset. */
+test("every app module at the root is cached", () => {
+  const modules = readdirSync(ROOT).filter(f => f.endsWith(".js") && f !== "sw.js");
+  for (const f of modules) assert.ok(ASSETS.includes(f), `${f} is not in sw.js ASSETS`);
 });
 
 test("the manifest's icons are cached", () => {
