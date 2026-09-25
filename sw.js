@@ -13,6 +13,7 @@ const ASSETS = [
   "./ui.js",
   "./theory.js",
   "./instrument.js",
+  "./store.js",
   "./manifest.webmanifest",
   "./apple-touch-icon.png",
   "./icon-192.png",
