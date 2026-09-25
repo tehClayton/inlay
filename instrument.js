@@ -76,6 +76,11 @@ export function pitchAt(inst, string, fret){
   return s.open + fret - s.start;
 }
 
+/* The number a player calls a string. Players count from the floor side: a
+   guitar's high E is string 1 and its low E string 6. `index` is physical
+   order, face side first, so the two run in opposite directions. */
+export const stringNumber = (index, count) => count - index;
+
 /* "E2 A2 D3 G3 B3 E4 · 22 frets". */
 export function summary(inst, pref = "sharp"){
   const tuning = inst.strings.map(s => pitchName(s.open, pref)).join(" ");

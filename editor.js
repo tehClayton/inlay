@@ -6,7 +6,7 @@
    list of presets to maintain. Each field says immediately whether it reads. */
 import { h, label } from "./ui.js";
 import { parsePitch, pitchName } from "./theory.js";
-import { validate, MAX_STRINGS, MAX_FRETS, MAX_NAME } from "./instrument.js";
+import { validate, stringNumber, MAX_STRINGS, MAX_FRETS, MAX_NAME } from "./instrument.js";
 
 const int = v => (/^\d+$/.test(String(v).trim()) ? Number(v) : NaN);
 
@@ -40,7 +40,7 @@ export function renderEditor(root, { inst, isNew, notePref, onSave, onCancel, on
      updates the draft, so a field never loses focus under the cursor. */
   function drawRows(){
     rows.replaceChildren(...draft.strings.map((s, i) => {
-      const n = i + 1;
+      const n = stringNumber(i, draft.strings.length);
       const tune = h("input", {
         type: "text", class: "tune", value: s.text, autocomplete: "off",
         spellcheck: "false", autocapitalize: "characters",
@@ -103,9 +103,10 @@ export function renderEditor(root, { inst, isNew, notePref, onSave, onCancel, on
     frets.toggleAttribute("aria-invalid", !(out.frets >= 1 && out.frets <= MAX_FRETS));
     const errs = validate(out);
     const bad = out.strings.findIndex(s => s.open === null);
+    const n = stringNumber(bad, out.strings.length);
     err.textContent =
-      bad >= 0 ? `String ${bad + 1}: "${draft.strings[bad].text}" isn't a pitch. Try a note and octave, like E2 or C#4.`
-      : errs.length ? friendly(errs[0])
+      bad >= 0 ? `String ${n}: "${draft.strings[bad].text}" isn't a pitch. Try a note and octave, like E2 or C#4.`
+      : errs.length ? friendly(errs[0], out.strings.length)
       : "";
     save.disabled = errs.length > 0;
     return errs.length === 0;
@@ -146,9 +147,12 @@ export function renderEditor(root, { inst, isNew, notePref, onSave, onCancel, on
   check();
 }
 
-function friendly(e){
+/* validate() counts strings from the face side, 1-based; people count them
+   the other way (see stringNumber), so its messages are renumbered. */
+function friendly(e, count){
   if (e === "name missing") return "Give the instrument a name.";
   if (e.startsWith("frets")) return `Frets must be a whole number from 1 to ${MAX_FRETS}.`;
-  if (e.includes("first fret")) return `${e.split(":")[0]}: the nut must sit below the last fret.`;
+  const m = /^string (\d+): first fret/.exec(e);
+  if (m) return `String ${stringNumber(Number(m[1]) - 1, count)}: the nut must sit below the last fret.`;
   return e;
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newInstrument, validate, pitchAt, summary, MAX_STRINGS } from "../instrument.js";
+import { newInstrument, validate, pitchAt, summary, stringNumber, MAX_STRINGS } from "../instrument.js";
 import { parsePitch } from "../theory.js";
 
 const P = parsePitch;
@@ -80,6 +80,13 @@ test("validate bounds string count and first fret", () => {
   assert.ok(validate({ ...g, strings: many }).length);
   assert.ok(validate({ ...g, strings: [{ open: 40, start: 22 }] }).length);  // nut at the last fret
   assert.deepEqual(validate({ ...g, strings: [{ open: 40, start: 21 }] }), []);
+});
+
+test("strings are numbered from the floor side, as players count", () => {
+  // Guitar, face side first: low E is index 0 and string 6; high E is string 1.
+  assert.equal(stringNumber(0, 6), 6);
+  assert.equal(stringNumber(5, 6), 1);
+  assert.equal(stringNumber(0, 4), 4);
 });
 
 test("summary lists the tuning and fret count", () => {
