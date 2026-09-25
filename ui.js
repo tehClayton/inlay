@@ -13,6 +13,72 @@ export function label(el, text){
   return el;
 }
 
+/* Builds an element: h("button", {class: "mini", onclick: f}, "Save").
+   Attributes starting "on" become listeners; true/false toggle boolean
+   attributes; children may be strings, nodes, or null to skip. Enough to keep
+   dynamic markup readable without a framework. */
+export function h(tag, attrs = {}, ...kids){
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)){
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "value") el.value = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()){
+    if (kid != null) el.append(kid);
+  }
+  return el;
+}
+
+/* ---------------------------------------------------------------- panels */
+/* Settings, the instrument list and the editor are panels over one scrim.
+   They stack — the editor opens from the list and closes back to it — so
+   Escape and a tap on the scrim close only the top one, and focus returns to
+   whatever opened it, never to a control hidden under the scrim. */
+const panels = [];
+
+function layer(){
+  const scrim = $("scrim");
+  scrim.hidden = panels.length === 0;
+  panels.forEach((p, i) => { p.el.style.zIndex = String(20 + 2 * i); });
+  if (panels.length) scrim.style.zIndex = String(19 + 2 * (panels.length - 1));
+}
+
+export function openPanel(el, { opener = document.activeElement, onClose } = {}){
+  if (panels.some(p => p.el === el)) return;
+  panels.push({ el, opener, onClose });
+  el.hidden = false;
+  layer();
+  el.focus();
+}
+
+/* Closes `el` and anything stacked above it; with no argument, the top one. */
+export function closePanel(el = panels.at(-1)?.el){
+  const i = panels.findIndex(p => p.el === el);
+  if (i < 0) return;
+  const closed = panels.splice(i);
+  for (const p of [...closed].reverse()){
+    p.el.hidden = true;
+    if (p.onClose) p.onClose();
+  }
+  layer();
+  /* The opener may have been re-rendered away (an Edit button in a list that
+     just refreshed); then the panel underneath takes focus instead. */
+  const back = closed[0].opener;
+  if (back && document.contains(back)) back.focus();
+  else if (panels.length) panels.at(-1).el.focus();
+}
+
+export const isOpen = el => panels.some(p => p.el === el);
+
+export function initPanels(){
+  $("scrim").addEventListener("click", () => closePanel());
+  addEventListener("keydown", e => {
+    if (e.key === "Escape" && panels.length){ e.preventDefault(); closePanel(); }
+  });
+}
+
 /* A short confirmation, gone on its own. Its own element rather than a use of
    #toast: that one is the update prompt and reloads the page when tapped. */
 let sayTimer = 0;

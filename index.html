@@ -136,12 +136,78 @@
     transition:opacity .14s linear, transform .14s ease-out}
   #msg.on{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0)}
   @media (prefers-reduced-motion:reduce){ #msg{transition:none} }
+
+  /* The instrument switcher is the header's left label: what you are
+     practising on, and the way to change it, in one place. */
+  .instbtn{justify-self:start;display:flex;align-items:center;gap:6px;min-width:0;
+    max-width:100%;padding:6px 8px;background:none;border:none;box-shadow:none;
+    color:var(--ink-dim);font-size:12px}
+  .instbtn:active{background:none}
+  .instbtn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .instbtn svg{width:9px;height:9px;fill:currentColor;opacity:.6;flex:0 0 auto}
+  .instbtn.on{color:var(--ink)}
+
+  button:disabled{opacity:.35;cursor:default}
+  button.go{background:var(--true);border-color:var(--true);color:#0C1710;font-weight:600}
+  .mini{padding:6px 8px;font-size:11px;min-width:28px;line-height:1;color:var(--ink-dim)}
+  .mini.warn{color:var(--miss);border-color:rgba(194,86,107,.4)}
+  .hint{font-family:var(--fig);font-size:10px;font-weight:400;letter-spacing:0;
+    text-transform:none;color:var(--ink-mute);opacity:.8}
+
+  .pick{display:flex;flex-wrap:wrap;gap:var(--sp2)}
+  .chip{padding:8px 12px;font-size:12px;line-height:1}
+  .chip.sel{background:var(--true);border-color:var(--true);color:#0C1710;
+    box-shadow:0 0 18px -7px var(--true)}
+
+  /* Text fields sit recessed, like the wells: they hold something you read
+     back. Selectable, unlike the rest of the page. */
+  input[type=text]{font-family:inherit;font-size:14px;color:var(--ink);width:100%;
+    background:var(--panel);border:1px solid var(--rule);border-radius:var(--r1);
+    padding:8px 10px;-webkit-user-select:text;user-select:text;
+    box-shadow:inset 0 1px 3px rgba(0,0,0,.3)}
+  input:focus-visible{outline:2px solid var(--true);outline-offset:1px}
+  input[aria-invalid]{border-color:var(--miss);box-shadow:0 0 0 1px var(--miss)}
+  .num{width:64px;font-family:var(--fig);text-align:center}
+  .num.sm{width:48px;flex:0 0 auto}
+  label.inline{display:flex;align-items:center;gap:var(--sp3);font-size:12px;color:var(--ink-dim)}
+  .check{display:flex;align-items:center;gap:var(--sp3);font-size:12px;color:var(--ink-dim)}
+  .check input{width:19px;height:19px;accent-color:var(--true);flex:0 0 auto}
+
+  .strows{display:grid;gap:4px}
+  .strow{display:flex;align-items:center;gap:var(--sp2)}
+  .strow .sn{font-family:var(--fig);font-size:11px;color:var(--ink-mute);
+    min-width:2ch;text-align:right;flex:0 0 auto}
+  .strow .tune{flex:1;min-width:0;font-family:var(--fig)}
+  .nutlab{font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-mute)}
+
+  .actions .btns{display:flex;align-items:center;gap:var(--sp2)}
+  .grow{flex:1}
+  .err{font-size:12px;line-height:1.5;color:var(--miss)}
+  .err:empty{display:none}
+
+  .instrows{display:grid;gap:2px}
+  .instrow{display:flex;align-items:center;gap:var(--sp2)}
+  .instrow .pickme{flex:1;min-width:0;display:grid;gap:3px;text-align:left;
+    background:rgba(255,255,255,.022);border:1px solid transparent;box-shadow:none;
+    padding:9px 10px}
+  .instrow .pickme b{font-size:13px;font-weight:600;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .instrow .pickme i{font-style:normal;font-family:var(--fig);font-size:10px;
+    color:var(--ink-mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .instrow.sel .pickme{background:rgba(127,203,143,.12);border-color:var(--true)}
+
+  .boardinfo{display:grid;gap:6px;justify-items:center;text-align:center;padding:var(--sp4)}
+  .boardinfo b{font-size:15px;font-weight:600}
+  .boardinfo i{font-style:normal;font-family:var(--fig);font-size:11px;color:var(--ink-dim)}
 </style>
 </head>
 <body>
 
 <header class="topbar">
-  <span></span>
+  <button id="instBtn" class="instbtn" aria-expanded="false" aria-controls="instPanel">
+    <span id="instName">No instrument</span>
+    <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 3l4 4 4-4z"/></svg>
+  </button>
   <span class="brand">
     <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
       <rect class="nut"  x="3.4"  y="5.6" width="1.2" height="12.8"/>
@@ -166,18 +232,26 @@
 
 <main class="stage">
   <div class="prompt" id="prompt" aria-live="polite"></div>
-  <div class="board" id="board">
-    <p class="empty" id="empty">Nothing to practise yet. This build is the app
-      shell; the fretboard and drills arrive in the next ones.</p>
-  </div>
+  <div class="board" id="board"></div>
 </main>
 
 <div id="scrim" hidden></div>
-<div class="settings" id="settings" role="dialog" aria-modal="true"
-     aria-labelledby="setTitle" tabindex="-1" hidden>
+<div class="settings" id="instPanel" role="dialog" aria-modal="true"
+     aria-labelledby="instTitle" tabindex="-1" hidden>
   <div class="sect">
-    <h2 id="setTitle">Settings</h2>
-    <p class="note">Instrument and practice settings will live here.</p>
+    <h2 id="instTitle">Instruments</h2>
+    <div class="instrows" id="instRows"></div>
+    <div class="pick"><button id="instNew">New instrument</button></div>
+  </div>
+</div>
+
+<div class="settings" id="editPanel" role="dialog" aria-modal="true" tabindex="-1" hidden></div>
+
+<div class="settings" id="settings" role="dialog" aria-modal="true"
+     aria-label="Settings" tabindex="-1" hidden>
+  <div class="sect">
+    <h2 id="npLabel">Note names</h2>
+    <div class="pick" id="notePick" role="radiogroup" aria-labelledby="npLabel"></div>
   </div>
 
   <!-- Metadata, not a donation bar, and in millitap's order: lowest commitment
@@ -203,26 +277,135 @@
 <button id="toast" type="button" hidden>Updated — tap to reload</button>
 
 <script type="module">
-import { $, label, showVersion, watchForUpdates } from "./ui.js";
+import {
+  $, h, label, say, showVersion, watchForUpdates,
+  initPanels, openPanel, closePanel, isOpen,
+} from "./ui.js";
+import {
+  loadInstruments, saveInstrument, deleteInstrument, loadSettings, saveSettings,
+} from "./store.js";
+import { newInstrument, summary } from "./instrument.js";
+import { noteName } from "./theory.js";
+import { renderEditor } from "./editor.js";
+
+let settings = loadSettings();
+let instruments = loadInstruments();
+
+/* The instrument in use: the one last chosen, or failing that the first. */
+const current = () =>
+  instruments.find(i => i.id === settings.instrument) ?? instruments[0] ?? null;
+
+const STORAGE_FAILED = "Couldn't save: this browser isn't letting inlay store anything.";
+
+initPanels();
+
+/* A panel's opener shows it is open, the way millitap's gear does. */
+function panelButton(btn, panel, render){
+  btn.onclick = () => {
+    if (isOpen(panel)) { closePanel(panel); return; }
+    render();
+    btn.classList.add("on");
+    btn.setAttribute("aria-expanded", "true");
+    openPanel(panel, { opener: btn, onClose: () => {
+      btn.classList.remove("on");
+      btn.setAttribute("aria-expanded", "false");
+    }});
+  };
+}
+
+/* ---------------------------------------------------------------- board */
+function renderBoard(){
+  const inst = current();
+  $("instName").textContent = inst ? inst.name : "No instrument";
+  label($("instBtn"), inst ? `Instrument: ${inst.name}. Switch or edit` : "Set up an instrument");
+  $("board").replaceChildren(inst
+    ? h("div", { class: "boardinfo" },
+        h("b", {}, inst.name),
+        h("i", {}, summary(inst, settings.notePref)),
+        h("p", { class: "empty" }, "The fretboard arrives in the next build."))
+    : h("div", { class: "boardinfo" },
+        h("p", { class: "empty" }, "Tell inlay what you play: strings, tuning and frets."),
+        h("button", { class: "go", onclick: e => edit(null, e.currentTarget) }, "Set up an instrument")));
+}
+
+/* ----------------------------------------------------------- instruments */
+function use(inst){
+  settings.instrument = inst.id;
+  saveSettings({ instrument: inst.id });
+  renderBoard();
+}
+
+function renderInstruments(){
+  const cur = current();
+  $("instRows").replaceChildren(...instruments.map(inst => {
+    const pick = h("button", { class: "pickme", onclick: () => { use(inst); closePanel($("instPanel")); } },
+      h("b", {}, inst.name), h("i", {}, summary(inst, settings.notePref)));
+    if (inst === cur) pick.setAttribute("aria-current", "true");
+    const ed = h("button", { class: "mini", onclick: e => edit(inst, e.currentTarget) }, "Edit");
+    label(ed, `Edit ${inst.name}`);
+    return h("div", { class: "instrow" + (inst === cur ? " sel" : "") }, pick, ed);
+  }));
+}
+
+panelButton($("instBtn"), $("instPanel"), renderInstruments);
+$("instNew").onclick = e => edit(null, e.currentTarget);
+
+/* Opens the editor on `inst`, or on a new instrument when null. */
+function edit(inst, opener){
+  const isNew = !inst;
+  const done = () => closePanel($("editPanel"));
+  renderEditor($("editPanel"), {
+    inst: inst ?? newInstrument(),
+    isNew,
+    notePref: settings.notePref,
+    onCancel: done,
+    onSave: saved => {
+      if (!saveInstrument(saved)){ say(STORAGE_FAILED); return; }
+      instruments = loadInstruments();
+      if (isNew) use(saved); else renderBoard();
+      if (isOpen($("instPanel"))) renderInstruments();
+      done();
+      say(isNew ? `Added ${saved.name}` : `Saved ${saved.name}`);
+    },
+    onDelete: gone => {
+      if (!confirm(`Delete "${gone.name}"? This can't be undone.`)) return;
+      if (!deleteInstrument(gone.id)){ say(STORAGE_FAILED); return; }
+      instruments = loadInstruments();
+      if (settings.instrument === gone.id && instruments[0]) use(instruments[0]);
+      renderBoard();
+      if (isOpen($("instPanel"))) renderInstruments();
+      done();
+      say(`Deleted ${gone.name}`);
+    },
+  });
+  openPanel($("editPanel"), { opener });
+}
 
 /* ------------------------------------------------------------- settings */
-/* Focus moves into the panel on open and back to the gear on close, so a
-   keyboard user is never left on a control hidden behind the scrim. */
-function setSettings(open){
-  const s = $("settings");
-  s.hidden = !open;
-  $("scrim").hidden = !open;
-  $("gear").classList.toggle("on", open);
-  $("gear").setAttribute("aria-expanded", String(open));
-  if (open) s.focus(); else $("gear").focus();
+function renderSettings(){
+  const labels = { sharp: "Sharps", flat: "Flats", both: "Both" };
+  $("notePick").replaceChildren(...Object.entries(labels).map(([pref, text]) => {
+    const on = settings.notePref === pref;
+    const b = h("button", {
+      class: "chip" + (on ? " sel" : ""), role: "radio", "aria-checked": String(on),
+      onclick: () => {
+        settings.notePref = pref;
+        if (!saveSettings({ notePref: pref })) say(STORAGE_FAILED);
+        renderSettings();
+        renderBoard();
+      },
+    }, `${text} ${noteName(1, pref)}`);
+    return b;
+  }));
 }
 
 label($("gear"), "Settings");
-$("gear").onclick  = () => setSettings($("settings").hidden);
-$("scrim").onclick = () => setSettings(false);
-addEventListener("keydown", e => {
-  if (e.key === "Escape" && !$("settings").hidden) setSettings(false);
-});
+panelButton($("gear"), $("settings"), renderSettings);
+
+renderBoard();
+/* First visit: straight into setting up an instrument, since there is
+   nothing else to do until there is one. */
+if (!instruments.length) edit(null, $("instBtn"));
 
 /* --------------------------------------------------------------- footer */
 label($("aboutSrc"), "inlay on GitHub — the source and how to report a problem");
