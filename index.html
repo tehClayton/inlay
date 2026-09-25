@@ -31,6 +31,17 @@
     --true:#7FCB8F;
     --miss:#C2566B;
 
+    /* The neck. Dark, low-saturation wood that sits on the ground rather
+       than competing with it; the colour belongs to what you tap, not to the
+       instrument. Pale pearl inlays, and metal that reads as metal without
+       outshining the marks drawn over it. */
+    --wood-a:#2B2420;
+    --wood-b:#231D1A;
+    --fret:#7E8893;
+    --nut:#CFC8B8;
+    --string:#A9B3BD;
+    --pearl:#E2DCCD;
+
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp5:24px;
     --r1:6px; --r2:10px; --r3:14px;
 
@@ -196,6 +207,34 @@
     color:var(--ink-mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .instrow.sel .pickme{background:rgba(127,203,143,.12);border-color:var(--true)}
 
+  /* The fretboard fills the well; the SVG's viewBox is set to the well's
+     pixel size, so strokes and text stay crisp at any size. */
+  .board.live{display:block;touch-action:none}
+  .fb{display:block;width:100%;height:100%}
+  .fb-wood{fill:url(#fbWood)}
+  .fb-open{fill:rgba(255,255,255,.02)}
+  .fb-fret{stroke:var(--fret);stroke-width:2;stroke-linecap:round}
+  .fb-nut{stroke:var(--nut);stroke-width:5;stroke-linecap:round}
+  .fb-spike{fill:var(--nut)}
+  .fb-string{stroke:var(--string);stroke-linecap:round}
+  .fb-inlay{fill:var(--pearl);opacity:.85}
+  .fb-num{fill:var(--ink-mute);font-family:var(--fig);font-size:10px;text-anchor:middle}
+  .fb-dim{fill:var(--ground);opacity:.62}
+  .fb-mark circle{stroke-width:2}
+  .fb-mark text{font-family:var(--ui);font-weight:600;text-anchor:middle;
+    dominant-baseline:central}
+  .fb-mark.note circle{fill:var(--ink);stroke:var(--ink)}
+  .fb-mark.note text{fill:#0C1710}
+  .fb-mark.true circle{fill:var(--true);stroke:var(--true)}
+  .fb-mark.true text{fill:#0C1710}
+  .fb-mark.miss circle{fill:var(--miss);stroke:var(--miss)}
+  .fb-mark.miss text{fill:#fff}
+  .fb-mark.target circle{fill:none;stroke:var(--ink)}
+  .fb-mark.target text{fill:var(--ink)}
+
+  .prompt b{color:var(--ink);font-weight:600}
+  .prompt i{font-style:normal;font-size:13px;color:var(--ink-mute);margin-left:var(--sp2)}
+
   .boardinfo{display:grid;gap:6px;justify-items:center;text-align:center;padding:var(--sp4)}
   .boardinfo b{font-size:15px;font-weight:600}
   .boardinfo i{font-style:normal;font-family:var(--fig);font-size:11px;color:var(--ink-dim)}
@@ -229,6 +268,17 @@
     </button>
   </span>
 </header>
+
+<!-- Shared SVG paint. A gradient is referenced by id, so it lives once in the
+     document rather than in every redraw of the fretboard. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="fbWood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color:var(--wood-a)"/>
+      <stop offset="1" style="stop-color:var(--wood-b)"/>
+    </linearGradient>
+  </defs>
+</svg>
 
 <main class="stage">
   <div class="prompt" id="prompt" aria-live="polite"></div>
@@ -284,9 +334,10 @@ import {
 import {
   loadInstruments, saveInstrument, deleteInstrument, loadSettings, saveSettings,
 } from "./store.js";
-import { newInstrument, summary } from "./instrument.js";
-import { noteName } from "./theory.js";
+import { newInstrument, summary, pitchAt, stringNumber } from "./instrument.js";
+import { noteName, pitchName } from "./theory.js";
 import { renderEditor } from "./editor.js";
+import { createFretboard } from "./fretboard.js";
 
 let settings = loadSettings();
 let instruments = loadInstruments();
@@ -314,18 +365,38 @@ function panelButton(btn, panel, render){
 }
 
 /* ---------------------------------------------------------------- board */
+let board = null;
+
+/* Until the drills arrive, tapping a position names it. It is also the
+   quickest way to check an instrument is set up the way it is held. */
+function tapped(pos){
+  const inst = current();
+  const midi = pitchAt(inst, pos.string, pos.fret);
+  if (midi === null) return;
+  board.clearMarks();
+  board.mark(pos, "note", noteName(midi, settings.notePref));
+  const where = `string ${stringNumber(pos.string, inst.strings.length)}, ` +
+                (pos.fret === inst.strings[pos.string].start ? "open" : `fret ${pos.fret}`);
+  $("prompt").replaceChildren(h("b", {}, pitchName(midi, settings.notePref)), h("i", {}, where));
+}
+
 function renderBoard(){
   const inst = current();
   $("instName").textContent = inst ? inst.name : "No instrument";
   label($("instBtn"), inst ? `Instrument: ${inst.name}. Switch or edit` : "Set up an instrument");
-  $("board").replaceChildren(inst
-    ? h("div", { class: "boardinfo" },
-        h("b", {}, inst.name),
-        h("i", {}, summary(inst, settings.notePref)),
-        h("p", { class: "empty" }, "The fretboard arrives in the next build."))
-    : h("div", { class: "boardinfo" },
-        h("p", { class: "empty" }, "Tell inlay what you play: strings, tuning and frets."),
-        h("button", { class: "go", onclick: e => edit(null, e.currentTarget) }, "Set up an instrument")));
+  $("prompt").replaceChildren();
+  if (inst){
+    $("board").classList.add("live");
+    if (!board) board = createFretboard($("board"), { onTap: tapped });
+    board.show(inst);
+    $("prompt").replaceChildren(h("i", {}, `${summary(inst, settings.notePref)} — tap a fret to name it`));
+  } else {
+    if (board){ board.destroy(); board = null; }
+    $("board").classList.remove("live");
+    $("board").replaceChildren(h("div", { class: "boardinfo" },
+      h("p", { class: "empty" }, "Tell inlay what you play: strings, tuning and frets."),
+      h("button", { class: "go", onclick: e => edit(null, e.currentTarget) }, "Set up an instrument")));
+  }
 }
 
 /* ----------------------------------------------------------- instruments */
