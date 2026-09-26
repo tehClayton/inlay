@@ -41,6 +41,7 @@
     --nut:#CFC8B8;
     --string:#A9B3BD;
     --pearl:#E2DCCD;
+    --edge:#4A3E36;
 
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp5:24px;
     --r1:6px; --r2:10px; --r3:14px;
@@ -63,13 +64,15 @@
     display:flex; flex-direction:column;
     padding:max(var(--sp2),env(safe-area-inset-top)) max(var(--sp2),env(safe-area-inset-right))
             max(var(--sp2),env(safe-area-inset-bottom)) max(var(--sp2),env(safe-area-inset-left));
-    gap:var(--sp2);
+    gap:6px;
   }
 
-  .topbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  /* The app bar sits at the bottom: what you're playing on the left, the app
+     in the middle, settings on the right. */
+  .appbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
     flex:0 0 auto;padding:0 var(--sp1)}
   .brand{display:flex;align-items:center;gap:var(--sp2)}
-  .topbar h1{font-size:13px;font-weight:600;color:var(--ink);letter-spacing:.05em}
+  .appbar h1{font-size:13px;font-weight:600;color:var(--ink);letter-spacing:.05em}
   /* The icon at header scale: a nut, frets, strings, the pearl inlay between
      two strings and one found note sitting on a string. */
   .mark{width:19px;height:19px;flex:0 0 auto}
@@ -95,9 +98,9 @@
 
   /* The practice surface. The prompt reads at a glance above the well the
      fretboard will sit in. */
-  .stage{flex:1 1 auto;display:flex;flex-direction:column;gap:var(--sp2);min-height:0}
-  .prompt{flex:0 0 auto;min-height:44px;display:flex;align-items:center;
-    justify-content:center;font-size:19px;color:var(--ink-dim);text-align:center}
+  .stage{flex:1 1 auto;display:flex;flex-direction:column;gap:4px;min-height:0}
+  .prompt{flex:0 0 auto;min-height:30px;display:flex;align-items:center;
+    justify-content:center;font-size:17px;color:var(--ink-dim);text-align:center}
   .board{flex:1 1 auto;min-height:140px;position:relative;background:var(--panel);
     border-radius:var(--r2);overflow:hidden;display:flex;align-items:center;
     justify-content:center;
@@ -105,10 +108,12 @@
   .empty{font-size:12px;line-height:1.6;color:var(--ink-mute);max-width:44ch;
     text-align:center;padding:var(--sp4)}
 
+  /* Panels rise from the app bar they open from, and scroll if taller than
+     the space above it. */
   .settings{position:fixed;z-index:20;left:50%;transform:translateX(-50%);
-    top:calc(max(var(--sp2),env(safe-area-inset-top)) + 36px);
+    bottom:calc(max(var(--sp2),env(safe-area-inset-bottom)) + 38px);
     width:calc(100% - var(--sp4));max-width:640px;
-    max-height:calc(100% - 64px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height:calc(100% - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     background:#1F2A35;border:1px solid var(--rule);border-radius:var(--r3);
     box-shadow:0 26px 64px rgba(0,0,0,.66), inset 0 1px 0 rgba(255,255,255,.055);
     overflow-y:auto;-webkit-overflow-scrolling:touch}
@@ -132,14 +137,15 @@
   .about a:hover{color:var(--ink);text-decoration-color:var(--ink-mute)}
   .about a:focus-visible{outline:2px solid var(--true);outline-offset:2px}
 
+  /* Toast and messages float just above the app bar, clear of its buttons. */
   #toast{position:fixed;left:50%;transform:translateX(-50%);
-    bottom:calc(var(--sp4) + env(safe-area-inset-bottom));
+    bottom:calc(44px + env(safe-area-inset-bottom));
     background:var(--true);color:#0C1710;padding:11px 17px;border-radius:var(--r1);
     font-size:13px;font-weight:600;z-index:30;border:none;
     box-shadow:0 10px 28px rgba(0,0,0,.5)}
 
   #msg{position:fixed;left:50%;transform:translateX(-50%) translateY(6px);
-    bottom:calc(var(--sp4) + env(safe-area-inset-bottom));
+    bottom:calc(44px + env(safe-area-inset-bottom));
     background:var(--panel-hi);color:var(--ink);border:1px solid var(--rule);
     padding:9px 15px;border-radius:var(--r1);font-size:12px;z-index:29;
     box-shadow:0 10px 28px rgba(0,0,0,.5);pointer-events:none;
@@ -148,7 +154,7 @@
   #msg.on{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0)}
   @media (prefers-reduced-motion:reduce){ #msg{transition:none} }
 
-  /* The instrument switcher is the header's left label: what you are
+  /* The instrument switcher is the app bar's left label: what you are
      practising on, and the way to change it, in one place. */
   .instbtn{justify-self:start;display:flex;align-items:center;gap:6px;min-width:0;
     max-width:100%;padding:6px 8px;background:none;border:none;box-shadow:none;
@@ -169,6 +175,28 @@
   .chip{padding:8px 12px;font-size:12px;line-height:1}
   .chip.sel{background:var(--true);border-color:var(--true);color:#0C1710;
     box-shadow:0 0 18px -7px var(--true)}
+  /* A chip that names a choice and says what it means underneath. */
+  .chip.two{display:grid;gap:4px;text-align:left;padding:9px 12px}
+  .chip.two b{font-weight:600}
+  .chip.two i{font-style:normal;font-size:10px;opacity:.75}
+  /* Not a button: "custom" is what the sliders made, not a choice to pick. */
+  .chip.custom{cursor:default}
+
+  /* The editor's view preview: the draft drawn as the board will draw it. */
+  .fbprev{height:132px;background:var(--panel);border-radius:var(--r2);overflow:hidden;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.42), inset 0 2px 5px rgba(0,0,0,.34)}
+  .slide{display:grid;grid-template-columns:minmax(110px,auto) 1fr minmax(150px,auto);
+    align-items:center;gap:var(--sp3);font-size:12px;color:var(--ink-dim)}
+  .slide input{width:100%;accent-color:var(--true)}
+  .slide .val{font-family:var(--fig);font-size:11px;color:var(--ink);text-align:right}
+  .slide .axis{font-style:normal;font-family:var(--fig);font-size:10px;color:var(--ink-mute)}
+  /* What the sliders add up to, in the words you'd describe the picture by. */
+  .effects{font-family:var(--fig);font-size:11px;color:var(--ink);padding:6px 10px;
+    border-radius:var(--r1);background:rgba(255,255,255,.03);border-left:3px solid var(--ink-mute)}
+  @media (max-width:520px){
+    .slide{grid-template-columns:1fr auto}
+    .slide input{grid-column:1 / -1;grid-row:2}
+  }
 
   /* Text fields sit recessed, like the wells: they hold something you read
      back. Selectable, unlike the rest of the page. */
@@ -210,7 +238,8 @@
   /* The fretboard fills the well; the SVG's viewBox is set to the well's
      pixel size, so strokes and text stay crisp at any size. */
   .board.live{display:block;touch-action:none}
-  .fb{display:block;width:100%;height:100%}
+  /* Clipped: with part of the neck shown, the rest runs off the edges. */
+  .fb{display:block;width:100%;height:100%;overflow:hidden}
   .fb-wood{fill:url(#fbWood)}
   .fb-open{fill:rgba(255,255,255,.02)}
   .fb-fret{stroke:var(--fret);stroke-width:2;stroke-linecap:round}
@@ -218,6 +247,10 @@
   .fb-spike{fill:var(--nut)}
   .fb-string{stroke:var(--string);stroke-linecap:round}
   .fb-inlay{fill:var(--pearl);opacity:.85}
+  /* The player's view: the fretboard's near edge, lighter as the binding in
+     the light, with its side dots. */
+  .fb-edge{fill:var(--edge)}
+  .fb-side{fill:var(--pearl)}
   .fb-num{fill:var(--ink-mute);font-family:var(--fig);font-size:10px;text-anchor:middle}
   .fb-dim{fill:var(--ground);opacity:.62}
   .fb-mark circle{stroke-width:2}
@@ -232,6 +265,26 @@
   .fb-mark.target circle{fill:none;stroke:var(--ink)}
   .fb-mark.target text{fill:var(--ink)}
 
+  /* The strip above the board: how many frets it shows, and the whole neck
+     in miniature to move along it. */
+  .neckctl{flex:0 0 auto;display:flex;align-items:center;gap:var(--sp3)}
+  .spanctl{display:flex;align-items:center;gap:var(--sp1);flex:0 0 auto}
+  .spanctl output{font-family:var(--fig);font-size:11px;color:var(--ink-dim);
+    min-width:9ch;text-align:center;font-variant-numeric:tabular-nums}
+  .spanctl .mini{min-width:32px;min-height:30px;font-size:14px}
+  .nbwrap{flex:1 1 auto;height:30px;min-width:0;background:var(--panel);
+    border-radius:var(--r1);overflow:hidden;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.42), inset 0 2px 4px rgba(0,0,0,.3)}
+  .nb{display:block;width:100%;height:100%;cursor:pointer;touch-action:none}
+  .nb:focus-visible{outline:2px solid var(--true);outline-offset:2px}
+  .nb-wood{fill:url(#fbWood)}
+  .nb-open{fill:rgba(255,255,255,.02)}
+  .nb-fret{stroke:var(--fret);stroke-width:1;opacity:.7}
+  .nb-nut{stroke:var(--nut);stroke-width:2}
+  .nb-dot{fill:var(--pearl);opacity:.8}
+  /* The window: the only coloured thing in the bar, so it reads at a glance. */
+  .nb-win{fill:rgba(127,203,143,.16);stroke:var(--true);stroke-width:1.5}
+
   .prompt b{color:var(--ink);font-weight:600}
   .prompt i{font-style:normal;font-size:13px;color:var(--ink-mute);margin-left:var(--sp2)}
 
@@ -242,10 +295,40 @@
 </head>
 <body>
 
-<header class="topbar">
+<!-- How much of the neck the board shows, and where: at the very top, where a
+     thumb reaches it without covering the board. The bar is only there when
+     the board shows part of the neck. -->
+<div class="neckctl" id="neckctl" hidden>
+  <div class="spanctl">
+    <button class="mini" id="spanLess" type="button">−</button>
+    <output id="spanVal"></output>
+    <button class="mini" id="spanMore" type="button">+</button>
+  </div>
+  <div class="nbwrap" id="neckbar" hidden></div>
+</div>
+
+<!-- Shared SVG paint. A gradient is referenced by id, so it lives once in the
+     document rather than in every redraw of the fretboard. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="fbWood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color:var(--wood-a)"/>
+      <stop offset="1" style="stop-color:var(--wood-b)"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<main class="stage">
+  <div class="prompt" id="prompt" aria-live="polite"></div>
+  <div class="board" id="board"></div>
+</main>
+
+<!-- What you're playing, the app, and its settings: at the bottom, out of the
+     way of the practice above it. -->
+<footer class="appbar">
   <button id="instBtn" class="instbtn" aria-expanded="false" aria-controls="instPanel">
     <span id="instName">No instrument</span>
-    <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 3l4 4 4-4z"/></svg>
+    <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 7l4-4 4 4z"/></svg>
   </button>
   <span class="brand">
     <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
@@ -267,23 +350,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94a7.07 7.07 0 0 0 .06-.94 7.07 7.07 0 0 0-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.74 8.87a.5.5 0 0 0 .12.61l2.03 1.58c-.04.31-.06.62-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.61l1.92 3.32c.12.22.38.3.6.22l2.39-.96c.49.38 1.03.7 1.62.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.48 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
     </button>
   </span>
-</header>
-
-<!-- Shared SVG paint. A gradient is referenced by id, so it lives once in the
-     document rather than in every redraw of the fretboard. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <linearGradient id="fbWood" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" style="stop-color:var(--wood-a)"/>
-      <stop offset="1" style="stop-color:var(--wood-b)"/>
-    </linearGradient>
-  </defs>
-</svg>
-
-<main class="stage">
-  <div class="prompt" id="prompt" aria-live="polite"></div>
-  <div class="board" id="board"></div>
-</main>
+</footer>
 
 <div id="scrim" hidden></div>
 <div class="settings" id="instPanel" role="dialog" aria-modal="true"
@@ -337,7 +404,8 @@ import {
 import { newInstrument, summary, pitchAt, stringNumber } from "./instrument.js";
 import { noteName, pitchName } from "./theory.js";
 import { renderEditor } from "./editor.js";
-import { createFretboard } from "./fretboard.js";
+import { createFretboard, createNeckBar } from "./fretboard.js";
+import { lastFrom } from "./instrument.js";
 
 let settings = loadSettings();
 let instruments = loadInstruments();
@@ -365,7 +433,58 @@ function panelButton(btn, panel, render){
 }
 
 /* ---------------------------------------------------------------- board */
-let board = null;
+let board = null, bar = null;
+let from = 0;             // the first fret in view, when the board shows part of the neck
+
+/* ---------------------------------------------------------- frets shown */
+/* The steps − and + move through. 0 is the whole neck, and sits at the top:
+   "+" from the widest window shows everything. */
+const SPANS = [3, 4, 5, 6, 7, 8, 10, 12, 0];
+const spanSteps = inst => SPANS.filter(s => s === 0 || s < inst.frets);
+const partial = inst => !!inst.view.span && inst.view.span < inst.frets;
+
+/* Where the instrument's span sits among the steps. A span that is no
+   longer less than the neck (its frets were edited down) counts as all; one
+   that isn't a step sits just below the next step up. */
+function spanStep(inst){
+  const steps = spanSteps(inst);
+  const cur = partial(inst) ? inst.view.span : 0;
+  const at = steps.indexOf(cur);
+  return { steps, at: at >= 0 ? at : steps.findIndex(s => s === 0 || s > cur) - 0.5 };
+}
+
+function stepSpan(delta){
+  const inst = current();
+  if (!inst) return;
+  const { steps, at } = spanStep(inst);
+  // Between two steps, − and + go to the one on that side.
+  const to = Number.isInteger(at) ? at + delta : (delta > 0 ? Math.ceil(at) : Math.floor(at));
+  const next = steps[Math.max(0, Math.min(steps.length - 1, to))];
+  if (next === inst.view.span) return;
+  const changed = { ...inst, view: { ...inst.view, span: next } };
+  if (!saveInstrument(changed)){ say(STORAGE_FAILED); return; }
+  instruments = loadInstruments();
+  from = Math.min(from, lastFrom(changed));
+  renderBoard();
+}
+$("spanLess").onclick = () => stepSpan(-1);
+$("spanMore").onclick = () => stepSpan(+1);
+label($("spanLess"), "Show fewer frets at a time");
+label($("spanMore"), "Show more frets at a time");
+
+function renderNeckCtl(inst){
+  $("neckctl").hidden = !inst;
+  if (!inst) return;
+  const { steps, at } = spanStep(inst);
+  $("spanVal").textContent = partial(inst) ? `${inst.view.span} frets` : "all frets";
+  $("spanLess").disabled = at <= 0;
+  $("spanMore").disabled = at >= steps.length - 1;
+  $("neckbar").hidden = !partial(inst);
+  if (partial(inst)){
+    if (!bar) bar = createNeckBar($("neckbar"), { onMove: f => { from = f; board.moveTo(f); } });
+    bar.show(inst, from);
+  }
+}
 
 /* Until the drills arrive, tapping a position names it. It is also the
    quickest way to check an instrument is set up the way it is held. */
@@ -385,10 +504,12 @@ function renderBoard(){
   $("instName").textContent = inst ? inst.name : "No instrument";
   label($("instBtn"), inst ? `Instrument: ${inst.name}. Switch or edit` : "Set up an instrument");
   $("prompt").replaceChildren();
+  if (inst) from = Math.min(from, lastFrom(inst));   // frets may have been edited down
+  renderNeckCtl(inst);
   if (inst){
     $("board").classList.add("live");
     if (!board) board = createFretboard($("board"), { onTap: tapped });
-    board.show(inst);
+    board.show(inst, { from });
     $("prompt").replaceChildren(h("i", {}, `${summary(inst, settings.notePref)} — tap a fret to name it`));
   } else {
     if (board){ board.destroy(); board = null; }
@@ -401,6 +522,7 @@ function renderBoard(){
 
 /* ----------------------------------------------------------- instruments */
 function use(inst){
+  if (settings.instrument !== inst.id) from = 0;   // a different neck starts at the nut
   settings.instrument = inst.id;
   saveSettings({ instrument: inst.id });
   renderBoard();
@@ -429,6 +551,7 @@ function edit(inst, opener){
     inst: inst ?? newInstrument(),
     isNew,
     notePref: settings.notePref,
+    boardSize: { width: $("board").clientWidth, height: $("board").clientHeight },
     onCancel: done,
     onSave: saved => {
       if (!saveInstrument(saved)){ say(STORAGE_FAILED); return; }
