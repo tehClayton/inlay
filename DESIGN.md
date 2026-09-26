@@ -308,19 +308,24 @@ it is installed to the home screen. inlay:
 
 ### Practice (`index.html`)
 
-- **Header:** instrument switcher, drill picker, settings, and a link to history.
+Top to bottom, the fretboard getting as much of the screen as it can:
+
+- **Frets shown and neck bar,** at the very top. A − / + control for how many
+  frets the board shows at once, from 3 up to the whole neck; fewer frets means
+  bigger targets. When the board shows part of the neck, a miniature of the
+  whole neck beside it, with the part in view picked out: drag or tap it to
+  move up and down the neck, or use the arrow keys. Drills use the same
+  controls.
 - **Prompt strip:** the current prompt in large type.
 - **Readouts:** accuracy, typical time and answer count for the running session, in
   millitap's readout style.
-- **Frets shown:** a − / + control for how many frets the board shows at once,
-  from 3 up to the whole neck. Fewer frets means bigger targets. Those frets
-  span the board, and the neck carries on past them at the same scale to the
-  screen's edges, or to the nut or last fret if those come first.
-- **Neck bar:** when the board shows part of the neck, a miniature of the whole
-  neck above it, with the part in view picked out. Drag or tap it to move up
-  and down the neck, or use the arrow keys. Drills use the same control.
-- **Fretboard:** fills the width, with the drill's fret window lit and the rest
-  dimmed.
+- **Fretboard:** fills the board, with the drill's fret window lit and the rest
+  dimmed. The frets shown span its width, and the neck carries on past them at
+  the same scale to the screen's edges, or to the nut or last fret if those come
+  first. A tilted neck is laid out taller to make up for the tilt, so it fills
+  the board's height too.
+- **App bar,** at the bottom: instrument switcher, the app's name, settings, and
+  a link to history. Panels open upwards from it.
 - **Answer buttons:** shown only in naming drills. Twelve notes, or interval labels.
 - **Transport:** start/stop, plus a study-mode toggle.
 
