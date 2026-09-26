@@ -63,12 +63,12 @@ test("a banjo's short fifth string starts at fret 5", () => {
 test("validate names each problem", () => {
   const g = newInstrument();
   const bad = { ...g, name: " ", frets: 0, strings: [{ open: 200, start: 0 }],
-                view: { ...g.view, tilt: 80, flip: "no" } };
+                view: { ...g.view, tilt: 95, flip: "no" } };
   const errs = validate(bad);
   assert.ok(errs.includes("name missing"));
   assert.ok(errs.includes("frets not 1–36"));
   assert.ok(errs.includes("string 1: pitch not 0–127"));
-  assert.ok(errs.includes("view.tilt not 0–50"));
+  assert.ok(errs.includes("view.tilt not 0–80"));
   assert.ok(errs.includes("view.flip not true/false"));
   assert.ok(validate({ ...g, view: "tab" }).includes("view missing"));
 });

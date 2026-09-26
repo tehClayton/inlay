@@ -46,16 +46,34 @@ const rad = d => d * Math.PI / 180;
 
 /* ---------------------------------------------------------------- camera */
 
+/* However the neck is turned, its nearest point stays at least this far in
+   front of the eye, as a fraction of the eye's distance. Closer, and that end
+   balloons; at or past the eye, the drawing breaks. */
+const NEAREST = 0.4;
+
 /* The camera for a view, working in coordinates centred on the neck with y
    pointing to the bass edge. `height` is the neck's flat height, which sets
-   the eye's distance. `project` takes a point on or off the fretboard's face
-   (z > 0 towards the eye) to the screen; `unproject` takes a screen point
-   back to the face (z = 0), where it has a unique answer. */
-export function camera({ tilt, turn, perspective, bassSign }, height){
+   the eye's distance; `halfLength` and `depth` bound the neck, so the eye
+   can be kept back from its nearest point. `project` takes a point on or off
+   the fretboard's face (z > 0 towards the eye) to the screen; `unproject`
+   takes a screen point back to the face (z = 0), where it has a unique
+   answer. */
+export function camera({ tilt, turn, perspective, bassSign }, height, halfLength = 0, depth = 0){
   const a = rad(tilt) * bassSign;               // the bass edge comes towards you
   const b = rad(turn);
   const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
-  const q = perspective * PERSPECTIVE_K / height;  // 1 / eye distance; 0 is none
+
+  /* 1 / eye distance; 0 is none. Set by the board's height, so the same
+     setting looks the same on any board — except where that would bring
+     the eye too close to the neck's nearest point, which a big turn on a
+     long, wide board can. */
+  const toEye = ([x, y, z]) => x * sb + (y * sa + z * ca) * cb;
+  const h = height / 2;
+  const nearest = Math.max(0, ...[-halfLength, halfLength].flatMap(x =>
+    [-h, h].flatMap(y => [toEye([x, y, 0]), toEye([x, y, -depth])])));
+  const q = nearest > 0
+    ? Math.min(perspective * PERSPECTIVE_K / height, (1 - NEAREST) / nearest)
+    : perspective * PERSPECTIVE_K / height;
 
   function project([x, y, z]){
     // Tilt about x: the face tips, y towards or away from the eye.
@@ -112,7 +130,7 @@ export function layout(inst, { width, height }){
   const bassY = v.flip ? top : bottom;
 
   // 2. Camera, centred on the neck.
-  const cam = camera({ ...v, bassSign }, H);
+  const cam = camera({ ...v, bassSign }, H, (X1 - X0) / 2, v.edge * pitch);
   const view3 = ([x, y], z = 0) => {
     const [px, py] = cam.project([x - midX, y - mid, z]);
     return [px + midX, py + mid];

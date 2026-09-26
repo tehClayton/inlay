@@ -193,28 +193,57 @@ test("a turned neck is shrunk to fit, never stretched or cropped", () => {
 });
 
 /* Every combination of every slider at both ends of its range, both
-   orientations, both hands: taps still land on the right cell, nothing
-   leaves the box, and the smallest target stays tappable on a phone. */
+   orientations, both hands, on a phone and on a very wide desktop board:
+   taps still land on the right cell and nothing leaves the box. The wide
+   board is where a big turn in strong perspective used to bring the neck's
+   near end to the eye and break the drawing. */
 test("every view the sliders allow still works", () => {
-  const PHONE = { width: 740, height: 260 };
+  const BOARDS = [{ width: 740, height: 260 }, { width: 1600, height: 240 }];
   const combos = Object.entries(VIEW_RANGES)
     .reduce((acc, [k, [lo, hi]]) => acc.flatMap(a => [lo, hi].map(v => ({ ...a, [k]: v }))), [{}]);
   let checked = 0;
-  for (const settings of combos){
+  for (const board of BOARDS) for (const settings of combos){
     for (const flip of [false, true]) for (const leftHanded of [false, true]){
-      const L = layout(guitar({ view: { ...settings, flip }, leftHanded }), PHONE);
-      const name = JSON.stringify({ ...settings, flip, leftHanded });
+      const L = layout(guitar({ view: { ...settings, flip }, leftHanded }), board);
+      const name = JSON.stringify({ ...settings, flip, leftHanded, ...board });
       for (const c of L.cells){
         assert.deepEqual(cellAt(L, c.cx, c.cy), { string: c.string, fret: c.fret }, name);
         for (const [x, y] of c.pts){
-          assert.ok(x > -1e-6 && x < PHONE.width + 1e-6 && y > -1e-6 && y < PHONE.height + 1e-6, name);
+          assert.ok(Number.isFinite(x) && Number.isFinite(y), name);
+          assert.ok(x > -1e-6 && x < board.width + 1e-6 && y > -1e-6 && y < board.height + 1e-6, name);
         }
       }
-      assert.ok(smallestCell(L) >= 6, `${name}: smallest target ${smallestCell(L).toFixed(1)}px`);
       checked++;
     }
   }
-  assert.equal(checked, 2 ** Object.keys(VIEW_RANGES).length * 4);
+  assert.equal(checked, 2 * 2 ** Object.keys(VIEW_RANGES).length * 4);
+});
+
+/* Steep settings are allowed to make frets small (the editor says so);
+   the presets and moderate views must stay comfortably tappable. */
+test("presets and moderate views stay tappable on a phone", () => {
+  const PHONE = { width: 740, height: 260 };
+  for (const name of Object.keys(VIEW_PRESETS)){
+    const L = layout(guitar({ view: name }), PHONE);
+    assert.ok(smallestCell(L) >= 14, `${name}: ${smallestCell(L).toFixed(1)}px`);
+  }
+  for (const view of [{ tilt: 45, perspective: 1 }, { turn: 30, perspective: 1 }, { angle: 20 }]){
+    const L = layout(guitar({ view }), PHONE);
+    assert.ok(smallestCell(L) >= 10, `${JSON.stringify(view)}: ${smallestCell(L).toFixed(1)}px`);
+  }
+});
+
+test("however far it turns, the neck's near end stays well in front of the eye", () => {
+  const H = 200;
+  for (const turn of [0, 40, 80]) for (const tilt of [0, 80]){
+    const cam = camera({ tilt, turn, perspective: 1, bassSign: 1 }, H, 1200, 30);
+    // A point at the near end, projected: finite, and magnified at most 1/0.4.
+    for (const x of [-1200, 1200]) for (const y of [-100, 100]){
+      const [sx, sy] = cam.project([x, y, 0]);
+      assert.ok(Number.isFinite(sx) && Number.isFinite(sy));
+      assert.ok(Math.hypot(sx, sy) <= Math.hypot(x, y) / 0.4 + 1e-6, `${turn}/${tilt} at ${x},${y}`);
+    }
+  }
 });
 
 /* ------------------------------------------------------------ the rest */

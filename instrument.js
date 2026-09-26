@@ -46,12 +46,13 @@ export const VIEW_PRESETS = Object.freeze({
   player:  Object.freeze({ flip: false, tilt: 35, turn: 0, angle: 0, perspective: 0.75, edge: 0.4 }),
 });
 
-/* Past these, frets get too small to tap on a phone or the neck stops
-   reading as a neck. */
+/* Tilt and turn stop short of 90°, where the fretboard would be edge-on with
+   nothing left to tap. Steep settings do make frets small; the editor warns
+   when they get too small for a fingertip rather than forbidding them. */
 export const VIEW_RANGES = Object.freeze({
-  tilt:        [0, 50],
-  turn:        [0, 40],
-  angle:       [0, 30],
+  tilt:        [0, 80],
+  turn:        [0, 80],
+  angle:       [0, 90],
   perspective: [0, 1],
   edge:        [0, 1],
 });
