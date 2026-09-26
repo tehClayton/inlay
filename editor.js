@@ -197,7 +197,8 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
         const on = which === p;
         return h("button", {
           class: "chip two" + (on ? " sel" : ""), role: "radio", "aria-checked": String(on),
-          onclick: () => { draft.view = { ...VIEW_PRESETS[p] }; refreshView(build()); },
+          // How many frets are shown isn't part of a preset; keep it.
+          onclick: () => { draft.view = { ...VIEW_PRESETS[p], span: draft.view.span }; refreshView(build()); },
         }, h("b", {}, PRESET_TEXT[p][0]), h("i", {}, PRESET_TEXT[p][1]));
       }),
       which ? null : h("span", { class: "chip two sel custom", "aria-current": "true" },

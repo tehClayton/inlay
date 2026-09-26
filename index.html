@@ -259,6 +259,26 @@
   .fb-mark.target circle{fill:none;stroke:var(--ink)}
   .fb-mark.target text{fill:var(--ink)}
 
+  /* The strip above the board: how many frets it shows, and the whole neck
+     in miniature to move along it. */
+  .neckctl{flex:0 0 auto;display:flex;align-items:center;gap:var(--sp3)}
+  .spanctl{display:flex;align-items:center;gap:var(--sp1);flex:0 0 auto}
+  .spanctl output{font-family:var(--fig);font-size:11px;color:var(--ink-dim);
+    min-width:9ch;text-align:center;font-variant-numeric:tabular-nums}
+  .spanctl .mini{min-width:32px;min-height:30px;font-size:14px}
+  .nbwrap{flex:1 1 auto;height:30px;min-width:0;background:var(--panel);
+    border-radius:var(--r1);overflow:hidden;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.42), inset 0 2px 4px rgba(0,0,0,.3)}
+  .nb{display:block;width:100%;height:100%;cursor:pointer;touch-action:none}
+  .nb:focus-visible{outline:2px solid var(--true);outline-offset:2px}
+  .nb-wood{fill:url(#fbWood)}
+  .nb-open{fill:rgba(255,255,255,.02)}
+  .nb-fret{stroke:var(--fret);stroke-width:1;opacity:.7}
+  .nb-nut{stroke:var(--nut);stroke-width:2}
+  .nb-dot{fill:var(--pearl);opacity:.8}
+  /* The window: the only coloured thing in the bar, so it reads at a glance. */
+  .nb-win{fill:rgba(127,203,143,.16);stroke:var(--true);stroke-width:1.5}
+
   .prompt b{color:var(--ink);font-weight:600}
   .prompt i{font-style:normal;font-size:13px;color:var(--ink-mute);margin-left:var(--sp2)}
 
@@ -309,6 +329,16 @@
 
 <main class="stage">
   <div class="prompt" id="prompt" aria-live="polite"></div>
+  <!-- How much of the neck the board shows, and where. The bar is only there
+       when the board shows part of the neck. -->
+  <div class="neckctl" id="neckctl" hidden>
+    <div class="spanctl">
+      <button class="mini" id="spanLess" type="button">−</button>
+      <output id="spanVal"></output>
+      <button class="mini" id="spanMore" type="button">+</button>
+    </div>
+    <div class="nbwrap" id="neckbar" hidden></div>
+  </div>
   <div class="board" id="board"></div>
 </main>
 
@@ -364,7 +394,8 @@ import {
 import { newInstrument, summary, pitchAt, stringNumber } from "./instrument.js";
 import { noteName, pitchName } from "./theory.js";
 import { renderEditor } from "./editor.js";
-import { createFretboard } from "./fretboard.js";
+import { createFretboard, createNeckBar } from "./fretboard.js";
+import { lastFrom } from "./instrument.js";
 
 let settings = loadSettings();
 let instruments = loadInstruments();
@@ -392,7 +423,58 @@ function panelButton(btn, panel, render){
 }
 
 /* ---------------------------------------------------------------- board */
-let board = null;
+let board = null, bar = null;
+let from = 0;             // the first fret in view, when the board shows part of the neck
+
+/* ---------------------------------------------------------- frets shown */
+/* The steps − and + move through. 0 is the whole neck, and sits at the top:
+   "+" from the widest window shows everything. */
+const SPANS = [3, 4, 5, 6, 7, 8, 10, 12, 0];
+const spanSteps = inst => SPANS.filter(s => s === 0 || s < inst.frets);
+const partial = inst => !!inst.view.span && inst.view.span < inst.frets;
+
+/* Where the instrument's span sits among the steps. A span that is no
+   longer less than the neck (its frets were edited down) counts as all; one
+   that isn't a step sits just below the next step up. */
+function spanStep(inst){
+  const steps = spanSteps(inst);
+  const cur = partial(inst) ? inst.view.span : 0;
+  const at = steps.indexOf(cur);
+  return { steps, at: at >= 0 ? at : steps.findIndex(s => s === 0 || s > cur) - 0.5 };
+}
+
+function stepSpan(delta){
+  const inst = current();
+  if (!inst) return;
+  const { steps, at } = spanStep(inst);
+  // Between two steps, − and + go to the one on that side.
+  const to = Number.isInteger(at) ? at + delta : (delta > 0 ? Math.ceil(at) : Math.floor(at));
+  const next = steps[Math.max(0, Math.min(steps.length - 1, to))];
+  if (next === inst.view.span) return;
+  const changed = { ...inst, view: { ...inst.view, span: next } };
+  if (!saveInstrument(changed)){ say(STORAGE_FAILED); return; }
+  instruments = loadInstruments();
+  from = Math.min(from, lastFrom(changed));
+  renderBoard();
+}
+$("spanLess").onclick = () => stepSpan(-1);
+$("spanMore").onclick = () => stepSpan(+1);
+label($("spanLess"), "Show fewer frets at a time");
+label($("spanMore"), "Show more frets at a time");
+
+function renderNeckCtl(inst){
+  $("neckctl").hidden = !inst;
+  if (!inst) return;
+  const { steps, at } = spanStep(inst);
+  $("spanVal").textContent = partial(inst) ? `${inst.view.span} frets` : "all frets";
+  $("spanLess").disabled = at <= 0;
+  $("spanMore").disabled = at >= steps.length - 1;
+  $("neckbar").hidden = !partial(inst);
+  if (partial(inst)){
+    if (!bar) bar = createNeckBar($("neckbar"), { onMove: f => { from = f; board.moveTo(f); } });
+    bar.show(inst, from);
+  }
+}
 
 /* Until the drills arrive, tapping a position names it. It is also the
    quickest way to check an instrument is set up the way it is held. */
@@ -412,10 +494,12 @@ function renderBoard(){
   $("instName").textContent = inst ? inst.name : "No instrument";
   label($("instBtn"), inst ? `Instrument: ${inst.name}. Switch or edit` : "Set up an instrument");
   $("prompt").replaceChildren();
+  if (inst) from = Math.min(from, lastFrom(inst));   // frets may have been edited down
+  renderNeckCtl(inst);
   if (inst){
     $("board").classList.add("live");
     if (!board) board = createFretboard($("board"), { onTap: tapped });
-    board.show(inst);
+    board.show(inst, { from });
     $("prompt").replaceChildren(h("i", {}, `${summary(inst, settings.notePref)} — tap a fret to name it`));
   } else {
     if (board){ board.destroy(); board = null; }
@@ -428,6 +512,7 @@ function renderBoard(){
 
 /* ----------------------------------------------------------- instruments */
 function use(inst){
+  if (settings.instrument !== inst.id) from = 0;   // a different neck starts at the nut
   settings.instrument = inst.id;
   saveSettings({ instrument: inst.id });
   renderBoard();

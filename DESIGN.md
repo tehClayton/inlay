@@ -92,7 +92,7 @@ practice on one never shows up in another's heatmap.
 | `strings` | One entry per string, in physical order from the string nearest the player's face to the one nearest the floor. Each is `{ open, start }`: `open` is the open pitch as a MIDI number, and `start` is the first playable fret (normally 0; 5 for a banjo's short fifth string) |
 | `frets` | Highest fret, 1–36 |
 | `leftHanded` | Mirrors the neck so the nut is on the right |
-| `view` | How the neck is drawn: a camera looking at a real neck. `flip` puts the bass edge (a guitar's low E) at the top instead of the bottom; `tilt` rotates about x, tipping the face away with the bass edge nearest; `turn` rotates about y, swinging the headstock end away; `angle` rotates about z, turning the neck on screen; `perspective` sets how close the eye is; `edge` is how deep the fretboard's side is, which tilt reveals with its side dots. Presets are starting points: **Tab** (the default: low string at the bottom, flat), **Flipped** (low string on top) and **Player's view** (tilted 35° with perspective, as seen looking down at it). The editor adjusts from any preset with sliders, a live preview, and a line saying what the view does in plain terms ("B–E at 81% of E–A · nut end at 88%"), measured from the drawing. The bass edge is named by physical side rather than pitch, because on re-entrant tunings the face-side string isn't the lowest |
+| `view` | How the neck is drawn: a camera looking at a real neck. `flip` puts the bass edge (a guitar's low E) at the top instead of the bottom; `tilt` rotates about x, tipping the face away with the bass edge nearest; `turn` rotates about y, swinging the headstock end away; `angle` rotates about z, turning the neck on screen; `perspective` sets how close the eye is; `edge` is how deep the fretboard's side is, which tilt reveals with its side dots. Presets are starting points: **Tab** (the default: low string at the bottom, flat), **Flipped** (low string on top) and **Player's view** (tilted 35° with perspective, as seen looking down at it). The editor adjusts from any preset with sliders, a live preview, and a line saying what the view does in plain terms ("B–E at 81% of E–A · nut end at 88%"), measured from the drawing. The bass edge is named by physical side rather than pitch, because on re-entrant tunings the face-side string isn't the lowest. `view.span` is how many frets the board shows at once (0 for the whole neck, otherwise 3 or more), which isn't part of any preset |
 | `created`, `updated` | Timestamps, used to resolve conflicts on import |
 
 - **Physical order, not pitch order.** Re-entrant tunings like a ukulele's high G,
@@ -312,6 +312,11 @@ it is installed to the home screen. inlay:
 - **Prompt strip:** the current prompt in large type.
 - **Readouts:** accuracy, typical time and answer count for the running session, in
   millitap's readout style.
+- **Frets shown:** a − / + control for how many frets the board shows at once,
+  from 3 up to the whole neck. Fewer frets means bigger targets.
+- **Neck bar:** when the board shows part of the neck, a miniature of the whole
+  neck above it, with the part in view picked out. Drag or tap it to move up
+  and down the neck, or use the arrow keys. Drills use the same control.
 - **Fretboard:** fills the width, with the drill's fret window lit and the rest
   dimmed.
 - **Answer buttons:** shown only in naming drills. Twelve notes, or interval labels.
