@@ -135,7 +135,10 @@ Every drill runs in the same loop:
 4. The next prompt appears.
 
 The **frets shown are the practice range**: every prompt is inside the window, and
-moving the neck bar mid-run moves the range.
+moving the neck bar mid-run moves the range. While a run is on, the neck past the
+window is dimmed, and taps there are neither answers nor misses. Find all on the
+neck is the exception: it asks about the whole neck, keeps its prompt as you move
+along it, and counts your progress ("3 of 8").
 
 The loop runs **until you stop it**, the way millitap plays until you press stop.
 One run is one **session**, saved on stop.
@@ -146,7 +149,8 @@ One run is one **session**, saved on stop.
 | --- | --- | --- |
 | **Find any** | A note name ("F♯") | Tap any position of it in view |
 | **Find on a string** | A note and a string ("F♯ on string 5 (A)") | Tap it on that string; either octave counts |
-| **Find all** | A note name ("Every F♯") | Tap every position of it in view, any order |
+| **Find all in view** | A note name ("Every F♯") | Tap every position of it in view, any order |
+| **Find all on the neck** | A note name ("Every F♯ on the neck") | Tap every position of it from the nut to the last fret, moving along the neck to find the rest |
 | **Name the note** | A highlighted fret | Choose from 12 note buttons, or interval buttons when a root is set |
 | **Interval** | A highlighted root and an interval ("major 3rd above") | Tap any position of the target note inside the window |
 | **Chord tones** | A chord ("A minor") | Tap every chord tone in the window, any order |

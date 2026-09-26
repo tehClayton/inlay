@@ -650,6 +650,7 @@ practice = createPractice({
   board: {
     clearMarks: () => board && board.clearMarks(),
     mark: (...a) => board && board.mark(...a),
+    setDim: d => board && board.setDim(d),
   },
   getInst: current,
   getFrom: () => from,

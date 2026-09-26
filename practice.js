@@ -13,6 +13,7 @@
 import { $, h, label, say, openPanel, closePanel, isOpen } from "./ui.js";
 import {
   DRILLS, DRILL_KINDS, candidates, makePrompt, promptText, isRight, createScore, scoreText,
+  wholeNeck, findsAll,
 } from "./drills.js";
 import { fretRange, stringNumber, pitchAt } from "./instrument.js";
 import { noteName } from "./theory.js";
@@ -33,10 +34,16 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
 
   /* ------------------------------------------------------------ drawing */
 
-  /* The board is redrawn from the run's state, so marks never drift from it. */
+  /* The frets on screen; the in-view drills' practice range. */
+  const windowRange = () => fretRange(getInst(), getFrom());
+
+  /* The board is redrawn from the run's state, so marks never drift from it.
+     While an in-view drill runs, the neck past the window is dimmed: it's
+     there to see, but it isn't what's being asked about. */
   function paint(){
     const inst = getInst();
     board.clearMarks();
+    board.setDim(running && prompt && !wholeNeck(prompt.kind) ? windowRange() : null);
     if (!prompt) return;
     const name = m => noteName(pitchAt(inst, m.string, m.fret), pref());
     if (prompt.kind === "name"){
@@ -75,7 +82,9 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     $("runBtn").classList.toggle("go", !running);
     $("runBtn").classList.toggle("stop", running);
     $("score").textContent = scoreText(score);
-    if (running && prompt) $("prompt").replaceChildren(h("b", {}, promptText(prompt, getInst(), pref())));
+    if (running && prompt){
+      $("prompt").replaceChildren(h("b", {}, promptText(prompt, getInst(), pref(), found.length)));
+    }
   }
 
   const render = () => { paint(); renderAnswers(); renderStrip(); };
@@ -84,7 +93,9 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
 
   function pool(){
     const inst = getInst();
-    return inst ? candidates(inst, fretRange(inst, getFrom()), { strings, notes: getSettings().drillNotes }) : [];
+    if (!inst) return [];
+    const range = wholeNeck(kind()) ? [0, inst.frets] : windowRange();
+    return candidates(inst, range, { strings, notes: getSettings().drillNotes });
   }
 
   function next(){
@@ -120,12 +131,17 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     render();
   }
 
-  /* A tap on the board while a run is on. */
+  /* A tap on the board while a run is on. In an in-view drill, a tap on the
+     dimmed neck past the window is neither an answer nor a miss. */
   function tap(pos, e){
     if (!running || state !== "asking" || prompt.kind === "name") return;
+    if (!wholeNeck(prompt.kind)){
+      const [a, b] = windowRange();
+      if (pos.fret < a || pos.fret > b) return;
+    }
     const ms = since(e);
     const ok = isRight(prompt, pos);
-    if (prompt.kind === "findAll"){
+    if (findsAll(prompt.kind)){
       if (ok){
         if (found.some(f => f.string === pos.string && f.fret === pos.fret)) return;   // already found
         found.push(pos);
@@ -230,8 +246,10 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
         h("div", { class: "pick" }, stringChips),
         h("h2", { id: "drillNotesLabel" }, "Notes"), notes),
       h("div", { class: "sect" },
-        h("p", { class: "note" }, "The frets shown are the practice range: every prompt is in view. " +
-          "Change them with − / + and the neck bar at the top."),
+        h("p", { class: "note" }, "The frets shown are the practice range: every prompt is in view, " +
+          "and the neck past them is dimmed. Change them with − / + and the neck bar at the top. " +
+          "Find all on the neck is the exception: it asks about the whole neck, and you move " +
+          "along it to find the rest."),
         h("div", { class: "btns" }, h("button", { class: "go", type: "button",
           onclick: () => { closePanel($("drillPanel")); if (!running) start(); } }, running ? "Done" : "Start"))),
     );
@@ -255,8 +273,14 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     get running(){ return running; },
     tap,
     stop,
-    /* The frets in view moved or changed size: a new prompt from the new range. */
-    rangeChanged(){ if (running){ prompt = null; next(); } },
+    /* The frets in view moved or changed size: a new prompt from the new
+       range — except on the whole neck, where moving along it is how you
+       find the rest, so the prompt stays. */
+    rangeChanged(){
+      if (!running) return;
+      if (prompt && wholeNeck(prompt.kind)) render();
+      else { prompt = null; next(); }
+    },
     /* A different instrument: its strings aren't these strings. */
     instrumentChanged(){ strings = null; stop(); },
     refresh: render,

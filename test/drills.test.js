@@ -78,6 +78,17 @@ test("find all: every position of the note in view", () => {
   assert.equal(p.targets.length, expected);
 });
 
+test("find all on the neck: given the whole neck, every position of the note", () => {
+  const g = guitar();
+  const whole = candidates(g, [0, g.frets]);
+  const p = makePrompt("findAllNeck", whole, { rng: seeded(9) });
+  // 23 positions a string (open to 22) is about two of each note per string:
+  // 11 or 12 across six strings.
+  assert.ok(p.targets.length === 11 || p.targets.length === 12, `${p.targets.length}`);
+  assert.equal(p.targets.length, whole.filter(c => c.pc === p.pc).length);
+  assert.ok(p.targets.some(t => t.fret > 12));
+});
+
 test("find any and find all choose notes evenly, not by how often they appear", () => {
   const c = candidates(guitar(), [0, 12]);
   const rng = seeded(11), counts = new Map();
@@ -113,6 +124,9 @@ test("prompt text", () => {
   const g = guitar();
   assert.equal(promptText({ kind: "findAny", pc: 6 }, g, "sharp"), "F♯");
   assert.equal(promptText({ kind: "findAll", pc: 6 }, g, "flat"), "Every G♭");
+  const neck = { kind: "findAllNeck", pc: 6, targets: new Array(8) };
+  assert.equal(promptText(neck, g, "sharp"), "Every F♯ on the neck");
+  assert.equal(promptText(neck, g, "sharp", 3), "Every F♯ on the neck · 3 of 8");
   assert.equal(promptText({ kind: "findOn", pc: 6, string: 1 }, g, "sharp"), "F♯ on string 5 (A)");
   // A guitar's two E strings are told apart by number.
   assert.equal(promptText({ kind: "findOn", pc: 0, string: 5 }, g, "sharp"), "C on string 1 (E)");

@@ -8,12 +8,19 @@ import { pitchAt, stringNumber } from "./instrument.js";
 import { pitchClass, isNatural, noteName } from "./theory.js";
 
 export const DRILLS = Object.freeze({
-  findAny:  { name: "Find any",          blurb: "tap the note anywhere in view" },
-  findOn:   { name: "Find on a string",  blurb: "tap the note on the string asked" },
-  findAll:  { name: "Find all",          blurb: "tap every one of the note in view" },
-  name:     { name: "Name the note",     blurb: "say which note is marked" },
+  findAny:     { name: "Find any",             blurb: "tap the note anywhere in view" },
+  findOn:      { name: "Find on a string",     blurb: "tap the note on the string asked" },
+  findAll:     { name: "Find all in view",     blurb: "tap every one of the note in view" },
+  findAllNeck: { name: "Find all on the neck", blurb: "every one of the note, nut to last fret" },
+  name:        { name: "Name the note",        blurb: "say which note is marked" },
 });
 export const DRILL_KINDS = Object.keys(DRILLS);
+
+/* Most drills ask about the frets on screen. Find all on the neck asks about
+   the whole neck, whatever part of it is on screen: finding the rest means
+   moving along it. */
+export const wholeNeck = kind => kind === "findAllNeck";
+export const findsAll = kind => kind === "findAll" || kind === "findAllNeck";
 
 /* What can be asked: every playable position in frets [first, last], on the
    strings allowed (null is all), of the notes allowed ("all" or
@@ -57,9 +64,9 @@ export function makePrompt(kind, cands, { rng = Math.random, last = null } = {})
                targets: cands.filter(c => c.string === at.string && c.pc === at.pc),
                key: `findOn:${at.string}:${at.pc}` };
     }
-    // findAny and findAll: a note, chosen evenly among the notes in range, so
-    // one that appears once isn't asked about less than one that appears six
-    // times.
+    // findAny and the find-alls: a note, chosen evenly among the notes in
+    // range, so one that appears once isn't asked about less than one that
+    // appears six times.
     const pc = pick(pcs, rng);
     return { kind, pc, targets: cands.filter(c => c.pc === pc), key: `${kind}:${pc}` };
   };
@@ -69,14 +76,18 @@ export function makePrompt(kind, cands, { rng = Math.random, last = null } = {})
 }
 
 /* The words for a prompt. `inst` names the string for findOn by its number
-   and open note, which is unambiguous even on a guitar's two E strings. */
-export function promptText(p, inst, pref){
+   and open note, which is unambiguous even on a guitar's two E strings. The
+   find-alls say how far along you are, once you've found any. */
+export function promptText(p, inst, pref, found = 0){
   const note = noteName(p.pc, pref);
   if (p.kind === "findOn"){
     const s = inst.strings[p.string];
     return `${note} on string ${stringNumber(p.string, inst.strings.length)} (${noteName(s.open, pref)})`;
   }
-  if (p.kind === "findAll") return `Every ${note}`;
+  if (findsAll(p.kind)){
+    const where = p.kind === "findAllNeck" ? " on the neck" : "";
+    return `Every ${note}${where}` + (found ? ` · ${found} of ${p.targets.length}` : "");
+  }
   if (p.kind === "name") return "Name this note";
   return note;
 }
