@@ -1,11 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { layout, cellAt, cellOf, recede, unrecede } from "../fretboard.js";
-import { newInstrument } from "../instrument.js";
+import {
+  layout, cellAt, cellOf, smallestCell, recede, unrecede, squeezeC, gapRatio,
+  squareToQuad, applyH, invertH,
+} from "../fretboard.js";
+import { newInstrument, VIEW_PRESETS, VIEW_RANGES } from "../instrument.js";
 import { parsePitch } from "../theory.js";
 
 const BOX = { width: 800, height: 240 };
-const guitar = (fields = {}) => newInstrument(fields);
+/* A guitar; `view` may be a preset's name, or an object of settings laid
+   over the tab preset. */
+const viewOf = v => (typeof v === "string" ? { ...VIEW_PRESETS[v] } : { ...VIEW_PRESETS.tab, ...v });
+const guitar = (fields = {}) =>
+  newInstrument({ ...fields, ...(fields.view ? { view: viewOf(fields.view) } : {}) });
 const close = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 
 const ALL_VIEWS = [
@@ -112,18 +119,114 @@ test("player's view: the neck keeps its height and its frets stay upright", () =
   const span = M => f => { const col = M.cells.filter(c => c.fret === f); return Math.max(...col.map(c => c.y1)) - Math.min(...col.map(c => c.y0)); };
   assert.ok(close(span(L)(1), span(L)(22)));
   for (const [[x1], [x2]] of L.wires) assert.ok(close(x1, x2));
-  // Along the neck nothing changes: same fret positions as flat.
-  for (const c of L.cells) assert.ok(close(c.cx, cellOf(flat, c).cx));
+  // Along the neck nothing changes: frets fall in the same proportions as
+  // flat (the edge strip may shrink the whole neck a little to fit).
+  const along = M => f => {
+    const x = g => cellOf(M, { string: 3, fret: g }).cx;
+    return (x(f) - x(0)) / (x(22) - x(0));
+  };
+  for (let f = 1; f < 22; f++) assert.ok(close(along(L)(f), along(flat)(f)));
 });
 
-test("the perspective fixes both ends and inverts exactly", () => {
-  assert.equal(recede(0), 0);
-  assert.ok(close(recede(1), 1));
+test("the squeeze fixes both ends and inverts exactly", () => {
+  const c = squeezeC(0.7);
+  assert.equal(recede(0, c), 0);
+  assert.ok(close(recede(1, c), 1));
   for (let k = 0; k <= 40; k++){
     const v = k / 40;
-    assert.ok(close(unrecede(recede(v)), v, 1e-12));
-    if (k) assert.ok(recede(v) > recede((k - 1) / 40));
+    assert.ok(close(unrecede(recede(v, c), c), v, 1e-12));
+    if (k) assert.ok(recede(v, c) > recede((k - 1) / 40, c));
   }
+  assert.equal(squeezeC(1), 0);                 // no squeeze is the identity
+  assert.ok(close(recede(0.3, 0), 0.3));
+});
+
+test("gapRatio reports what the squeeze does to the far gap", () => {
+  assert.ok(close(gapRatio(1, 6), 1));
+  assert.equal(gapRatio(0.5, 2), 1);            // one gap: nothing to compare
+  for (const squeeze of [0.5, 0.7, 0.9]){
+    const L = layout(guitar({ view: { squeeze } }), BOX);
+    const y = i => L.strings[i].y, gaps = [1, 5].map(i => y(i - 1) - y(i));
+    assert.ok(close(gaps[1] / gaps[0], gapRatio(squeeze, 6), 1e-9));
+  }
+});
+
+test("recession draws the headstock end at that fraction of the body end", () => {
+  for (const recession of [0.6, 0.8]){
+    const L = layout(guitar({ view: { recession } }), BOX);
+    const [top, bottom] = [L.wood[0], L.wood[3]], [ttop, tbottom] = [L.wood[1], L.wood[2]];
+    assert.ok(close((bottom[1] - top[1]) / (tbottom[1] - ttop[1]), recession, 1e-9));
+  }
+});
+
+test("angle turns the neck, headstock end up; left-handed turns the other way", () => {
+  for (const angle of [10, 30]){
+    for (const leftHanded of [false, true]){
+      const L = layout(guitar({ view: { angle }, leftHanded }), BOX);
+      const nut = cellOf(L, { string: 3, fret: 0 }), body = cellOf(L, { string: 3, fret: 22 });
+      const deg = Math.atan2(body.cy - nut.cy, Math.abs(body.cx - nut.cx)) * 180 / Math.PI;
+      assert.ok(close(deg, angle, 1e-6), `${angle}° ${leftHanded ? "left" : "right"}: got ${deg}`);
+      assert.ok(nut.cy < body.cy, "headstock end should be higher");
+    }
+  }
+});
+
+test("a turned neck is shrunk to fit, never stretched or cropped", () => {
+  const L = layout(guitar({ view: { angle: 30 } }), BOX), flat = layout(guitar(), BOX);
+  const len = M => { const a = cellOf(M, { string: 3, fret: 0 }), b = cellOf(M, { string: 3, fret: 22 }); return Math.hypot(b.cx - a.cx, b.cy - a.cy); };
+  assert.ok(len(L) < len(flat));
+  // Uniform: along and across shrink by the same factor.
+  const across = M => { const a = cellOf(M, { string: 0, fret: 12 }), b = cellOf(M, { string: 5, fret: 12 }); return Math.hypot(b.cx - a.cx, b.cy - a.cy); };
+  assert.ok(close(len(L) / len(flat), across(L) / across(flat), 1e-9));
+});
+
+test("tab is the flat layout turned upside down: nothing scaled or moved", () => {
+  const L = layout(guitar(), BOX);
+  const flipY = y => L.top + L.bottom - y;
+  for (const c of L.cells){
+    const [x0, y0, x1, y1] = c.flat;
+    assert.ok(close(c.x0, x0) && close(c.x1, x1), `${c.string}:${c.fret} x`);
+    assert.ok(close(c.y0, flipY(y1)) && close(c.y1, flipY(y0)), `${c.string}:${c.fret} y`);
+  }
+});
+
+test("the recession map sends the square's corners home and inverts exactly", () => {
+  const q = [[10, 40], [300, 5], [300, 200], [10, 160]];
+  const H = squareToQuad(q), Hi = invertH(H);
+  [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(([u, v], i) => {
+    const [x, y] = applyH(H, u, v);
+    assert.ok(close(x, q[i][0]) && close(y, q[i][1]));
+  });
+  for (let k = 0; k < 50; k++){
+    const u = (k * 0.37) % 1, v = (k * 0.61) % 1;
+    const [x, y] = applyH(H, u, v), [u2, v2] = applyH(Hi, x, y);
+    assert.ok(close(u, u2, 1e-9) && close(v, v2, 1e-9));
+  }
+});
+
+/* Every combination of every slider at both ends of its range, both
+   orientations, both hands: taps still land on the right cell, nothing
+   leaves the box, and the smallest target stays tappable on a phone. */
+test("every view the sliders allow still works", () => {
+  const PHONE = { width: 740, height: 260 };
+  const ends = Object.entries(VIEW_RANGES).map(([k, [lo, hi]]) => [k, [lo, hi]]);
+  let checked = 0;
+  const combos = ends.reduce((acc, [k, vals]) => acc.flatMap(a => vals.map(v => ({ ...a, [k]: v }))), [{}]);
+  for (const settings of combos){
+    for (const flip of [false, true]) for (const leftHanded of [false, true]){
+      const L = layout(guitar({ view: { ...settings, flip }, leftHanded }), PHONE);
+      const name = JSON.stringify({ ...settings, flip, leftHanded });
+      for (const c of L.cells){
+        assert.deepEqual(cellAt(L, c.cx, c.cy), { string: c.string, fret: c.fret }, name);
+        for (const [x, y] of c.pts){
+          assert.ok(x > -1e-6 && x < PHONE.width + 1e-6 && y > -1e-6 && y < PHONE.height + 1e-6, name);
+        }
+      }
+      assert.ok(smallestCell(L) >= 6, `${name}: smallest target ${smallestCell(L).toFixed(1)}px`);
+      checked++;
+    }
+  }
+  assert.equal(checked, 16 * 4);
 });
 
 test("player's view: the near edge and its side dots show below the low string", () => {
@@ -144,7 +247,7 @@ test("a banjo's short string has no cells below its nut", () => {
     { open: P("B3"), start: 0 }, { open: P("D4"), start: 0 },
   ]});
   for (const view of ["tab", "player"]){
-    const L = layout({ ...banjo, view }, BOX);
+    const L = layout({ ...banjo, view: viewOf(view) }, BOX);
     assert.equal(L.cells.filter(c => c.string === 0).length, 22 - 5 + 1);
     const firstShort = cellOf(L, { string: 0, fret: 5 });
     assert.equal(firstShort.flat[0], cellOf(L, { string: 1, fret: 5 }).flat[0]);   // fret 5's space
