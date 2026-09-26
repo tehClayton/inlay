@@ -3,9 +3,12 @@
    layout() and cellAt() are pure, so the geometry is tested without a browser.
    createFretboard() is the DOM half; it only draws what layout() computed.
 
-   Geometry is worked out in one canonical orientation — nut on the left, the
-   face-side string at the top — and mirrored at the end for left-handed and
-   tab view, so there is exactly one set of arithmetic to get right. */
+   Geometry is worked out FLAT in one canonical orientation — nut on the left,
+   face-side string at the top — and every point then goes through a single
+   transform for the view: a vertical flip for tab, a perspective projection
+   for the player's view, a horizontal flip for left-handed. So there is one
+   set of fret arithmetic, and hit-testing is the same transform run backwards
+   into the flat layout, where finding a cell is a rectangle test. */
 
 /* Real frets shrink by 2^(-1/12) each, halving by the 12th. Drawn to scale,
    a 24-fret neck on a phone leaves the high frets too narrow to hit, and
@@ -23,15 +26,60 @@ const PAD_X = 6;
 const PAD_TOP = 8;
 const NUMBERS_H = 16;      // the strip of fret numbers under the neck
 
+/* The player's view. Looking down at the neck from where you hold it, the
+   body end is nearest and the headstock end recedes: FAR is how tall the nut
+   end looks relative to the body end. A level neck rather than the diagonal
+   it really lies at, so it still spans the screen. EDGE is the side of the
+   fretboard you see from above, where the side dots sit, at the near end. */
+const FAR = 0.62;
+const EDGE = 7;
+
+/* ------------------------------------------------------------ projection */
+
+/* The projective map taking the unit square onto a quadrilateral, corners in
+   order (0,0) (1,0) (1,1) (0,1) — Heckbert's closed form. Straight lines stay
+   straight, which is why frets and strings can still be drawn as lines. */
+export function squareToQuad([[x0, y0], [x1, y1], [x2, y2], [x3, y3]]){
+  const sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
+  if (Math.abs(sx) < 1e-12 && Math.abs(sy) < 1e-12){
+    return [x1 - x0, x2 - x1, x0, y1 - y0, y2 - y1, y0, 0, 0];
+  }
+  const dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2;
+  const den = dx1 * dy2 - dx2 * dy1;
+  const g = (sx * dy2 - dx2 * sy) / den, h = (dx1 * sy - sx * dy1) / den;
+  return [x1 - x0 + g * x1, x3 - x0 + h * x3, x0, y1 - y0 + g * y1, y3 - y0 + h * y3, y0, g, h];
+}
+
+export function applyH([a, b, c, d, e, f, g, h], u, v){
+  const w = g * u + h * v + 1;
+  return [(a * u + b * v + c) / w, (d * u + e * v + f) / w];
+}
+
+/* The inverse map, from the adjugate of the 3x3 matrix, normalised so its
+   last entry is 1 like the forward map's. */
+export function invertH([a, b, c, d, e, f, g, h]){
+  const A = e - f * h, B = c * h - b, C = b * f - c * e;
+  const D = f * g - d, E = a - c * g, F = c * d - a * f;
+  const G = d * h - e * g, Hh = b * g - a * h, I = a * e - b * d;
+  return [A / I, B / I, C / I, D / I, E / I, F / I, G / I, Hh / I];
+}
+
+const dist = ([ax, ay], [bx, by]) => Math.hypot(bx - ax, by - ay);
+
+/* ---------------------------------------------------------------- layout */
+
 /* Everything the renderer draws and the hit test reads, in CSS pixels of a
-   width x height box. */
+   width x height box. Shapes come out already transformed: polygons as point
+   lists, lines as endpoint pairs, inlays as ellipses. */
 export function layout(inst, { width, height }){
+  const player = inst.view === "player";
   const n = inst.strings.length;
   const top = PAD_TOP;
-  const bottom = Math.max(top + n * 8, height - NUMBERS_H - 4);
+  const bottom = Math.max(top + n * 8, height - NUMBERS_H - 4 - (player ? EDGE + 2 : 0));
   const pitch = (bottom - top) / n;             // vertical space per string
+  const mid = (top + bottom) / 2;
 
-  // Canonical x: wire[f] is the right-hand edge of fret f; wire[0] is the nut.
+  // Flat x: wire[f] is the right-hand edge of fret f; wire[0] is the nut.
   const weights = [];
   for (let f = 1; f <= inst.frets; f++) weights.push(TAPER ** (f - 1));
   const total = OPEN_WEIGHT + weights.reduce((a, b) => a + b, 0);
@@ -39,64 +87,112 @@ export function layout(inst, { width, height }){
   const wire = [PAD_X + OPEN_WEIGHT * unit];
   for (const w of weights) wire.push(wire.at(-1) + w * unit);
   const left = f => (f === 0 ? PAD_X : wire[f - 1]);
+  const X0 = PAD_X, X1 = wire[inst.frets];
 
-  // Mirroring, applied once on the way out.
-  const X = x => (inst.leftHanded ? width - x : x);
-  const Y = y => (inst.tabView ? top + bottom - y : y);
-  const span = (a, b) => [Math.min(X(a), X(b)), Math.max(X(a), X(b))];
+  /* The view transform, flat -> screen, and its inverse. Each step is its own
+     inverse or has one, so T⁻¹ is the steps undone in reverse order. */
+  const flipY = inst.view !== "flipped";        // tab and player: face side at the bottom
+  const fy = y => (flipY ? top + bottom - y : y);
+  const fx = x => (inst.leftHanded ? width - x : x);
+  let proj = p => p, unproj = p => p;
+  if (player){
+    const half = (bottom - top) / 2;
+    // Nut end far (left, shorter), body end near (right, full height).
+    const H = squareToQuad([[X0, mid - FAR * half], [X1, top], [X1, bottom], [X0, mid + FAR * half]]);
+    const Hi = invertH(H);
+    proj = ([x, y]) => applyH(H, (x - X0) / (X1 - X0), (y - top) / (bottom - top));
+    unproj = ([x, y]) => {
+      const [u, v] = applyH(Hi, x, y);
+      return [X0 + u * (X1 - X0), top + v * (bottom - top)];
+    };
+  }
+  const T = ([x, y]) => { const [px, py] = proj([x, fy(y)]); return [fx(px), py]; };
+  const Tinv = ([x, y]) => { const [ux, uy] = unproj([fx(x), y]); return [ux, fy(uy)]; };
+
+  const quad = (x0, y0, x1, y1) => [T([x0, y0]), T([x1, y0]), T([x1, y1]), T([x0, y1])];
+  const seg = (x0, y0, x1, y1) => [T([x0, y0]), T([x1, y1])];
+  /* How much the view scales things near a flat point, across and along. */
+  const scaleAt = (x, y) => [dist(T([x - 1, y]), T([x + 1, y])) / 2, dist(T([x, y - 1]), T([x, y + 1])) / 2];
 
   const strings = inst.strings.map((s, i) => {
     const y = top + (i + 0.5) * pitch;
     // A string starts at its own nut: the main nut, or a banjo's fifth-string
     // spike at fret `start`.
-    const [x0, x1] = span(s.start === 0 ? wire[0] : wire[s.start], wire[inst.frets]);
-    return { index: i, y: Y(y), x0, x1, open: s.open, nutX: s.start ? X(wire[s.start]) : null };
+    const x0 = s.start === 0 ? wire[0] : wire[s.start];
+    return { index: i, line: seg(x0, y, X1, y), open: s.open,
+             spike: s.start ? T([wire[s.start], y]) : null, y: T([X1, y])[1] };
   });
 
   /* One cell per playable position. Fret `start` is a string's open position,
-     drawn in the space just before its nut, like the open column. */
+     drawn in the space just before its nut, like the open column. `flat` is
+     the untransformed rectangle the hit test checks. */
   const cells = [];
   inst.strings.forEach((s, i) => {
-    const y0 = top + i * pitch, y1 = y0 + pitch;
+    const y0 = top + i * pitch, y1 = y0 + pitch, cy = y0 + pitch / 2;
     for (let f = s.start; f <= inst.frets; f++){
-      const [x0, x1] = span(left(f), f === 0 ? wire[0] : wire[f]);
-      const [ya, yb] = [Y(y0), Y(y1)].sort((a, b) => a - b);
-      cells.push({ string: i, fret: f, x0, x1, y0: ya, y1: yb,
-                   cx: (x0 + x1) / 2, cy: Y(y0 + pitch / 2) });
+      const x0 = left(f), x1 = f === 0 ? wire[0] : wire[f], cx = (x0 + x1) / 2;
+      const pts = quad(x0, y0, x1, y1);
+      const [ccx, ccy] = T([cx, cy]);
+      const w = dist(T([x0, cy]), T([x1, cy])), hgt = dist(T([cx, y0]), T([cx, y1]));
+      cells.push({
+        string: i, fret: f, pts, cx: ccx, cy: ccy,
+        x0: Math.min(...pts.map(p => p[0])), x1: Math.max(...pts.map(p => p[0])),
+        y0: Math.min(...pts.map(p => p[1])), y1: Math.max(...pts.map(p => p[1])),
+        r: Math.min(w * 0.42, hgt * 0.46, 17),   // the marker that fits it
+        flat: [x0, y0, x1, y1],
+      });
     }
   });
 
-  const mid = (top + bottom) / 2;
+  const centre = f => (left(f) + wire[f]) / 2;
+  const dotR = Math.min(pitch * 0.2, 7);
+  const ellipse = (x, y, r) => {
+    const [cx, cy] = T([x, y]), [sx, sy] = scaleAt(x, y);
+    return { cx, cy, rx: r * sx, ry: r * sy };
+  };
   const inlays = [];
-  const centre = f => X((left(f) + wire[f]) / 2);
-  for (const f of INLAY_SINGLE) if (f <= inst.frets) inlays.push({ fret: f, cx: centre(f), cy: mid });
+  for (const f of INLAY_SINGLE) if (f <= inst.frets) inlays.push({ fret: f, ...ellipse(centre(f), mid, dotR) });
   for (const f of INLAY_DOUBLE) if (f <= inst.frets){
     // In the gaps either side of the middle, where they sit on a real neck:
     // between strings 2–3 and 4–5 on a guitar. With an odd count the middle
     // is a string, so step out to the next gaps. Too few strings to have
     // such gaps: a quarter in from each edge.
     const off = n >= 4 ? (n % 2 ? 1.5 : 1) * pitch : (bottom - top) / 4;
-    inlays.push({ fret: f, cx: centre(f), cy: Y(mid - off) },
-                { fret: f, cx: centre(f), cy: Y(mid + off) });
+    inlays.push({ fret: f, ...ellipse(centre(f), mid - off, dotR) },
+                { fret: f, ...ellipse(centre(f), mid + off, dotR) });
   }
+  const numbered = [...INLAY_SINGLE, ...INLAY_DOUBLE].filter(f => f <= inst.frets).sort((a, b) => a - b);
 
-  const numbered = [...INLAY_SINGLE, ...INLAY_DOUBLE].filter(f => f <= inst.frets);
+  /* The fretboard's near edge, seen from above in the player's view: the
+     face side's edge, beyond its string, with side dots along it. */
+  const edge = player ? quad(wire[0], top - EDGE, X1, top) : null;
+  const sideDots = player ? numbered.map(f => ellipse(centre(f), top - EDGE / 2, 1.9)) : [];
+
+  // Fret numbers sit just below whatever is drawn lowest at that fret.
+  const numbers = numbered.map(f => {
+    const ys = [T([centre(f), top]), T([centre(f), bottom])];
+    if (player) ys.push(T([centre(f), top - EDGE]));
+    return { fret: f, cx: T([centre(f), mid])[0], y: Math.max(...ys.map(p => p[1])) + 12 };
+  });
 
   return {
-    width, height, top, bottom, pitch,
-    nutX: X(wire[0]),
-    wires: wire.slice(1).map(X),
-    neck: span(wire[0], wire[inst.frets]),
-    openCol: span(PAD_X, wire[0]),
-    strings, cells, inlays,
-    numbers: numbered.map(f => ({ fret: f, cx: centre(f), y: bottom + NUMBERS_H - 3 })),
+    width, height, top, bottom, pitch, view: inst.view,
+    wood: quad(wire[0], top, X1, bottom),
+    openCol: quad(X0, top, wire[0], bottom),
+    nut: seg(wire[0], top, wire[0], bottom),
+    wires: wire.slice(1).map(x => seg(x, top, x, bottom)),
+    strings, cells, inlays, edge, sideDots, numbers,
+    toFlat: Tinv,
   };
 }
 
-/* The playable position under a point, or null. */
+/* The playable position under a point, or null. The point is taken back
+   into the flat layout, where cells are plain rectangles. */
 export function cellAt(L, x, y){
+  const [fx, fy] = L.toFlat([x, y]);
   for (const c of L.cells){
-    if (x >= c.x0 && x < c.x1 && y >= c.y0 && y < c.y1) return { string: c.string, fret: c.fret };
+    const [x0, y0, x1, y1] = c.flat;
+    if (fx >= x0 && fx < x1 && fy >= y0 && fy < y1) return { string: c.string, fret: c.fret };
   }
   return null;
 }
@@ -114,6 +210,10 @@ function el(tag, attrs = {}, text){
   if (text != null) e.textContent = text;
   return e;
 }
+
+const points = pts => pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
+const line = (cls, [[x1, y1], [x2, y2]], extra = {}) =>
+  el("line", { class: cls, x1, y1, x2, y2, ...extra });
 
 /* Heavier strings for lower pitches, as on the instrument: roughly 3px at a
    bass's low B down to 1px at a guitar's high E. */
@@ -137,18 +237,17 @@ export function createFretboard(host, { onTap } = {}){
     svg.setAttribute("aria-label",
       `Fretboard: ${inst.strings.length} strings, ${inst.frets} frets`);
 
-    const [n0, n1] = L.neck, [o0, o1] = L.openCol;
     const g = [];
-    g.push(el("rect", { class: "fb-open", x: o0, y: L.top, width: o1 - o0, height: L.bottom - L.top }));
-    g.push(el("rect", { class: "fb-wood", x: n0, y: L.top, width: n1 - n0, height: L.bottom - L.top, rx: 2 }));
-    for (const d of L.inlays) g.push(el("circle", { class: "fb-inlay", cx: d.cx, cy: d.cy,
-      r: Math.min(L.pitch * 0.2, 7) }));
-    for (const x of L.wires) g.push(el("line", { class: "fb-fret", x1: x, x2: x, y1: L.top, y2: L.bottom }));
-    g.push(el("line", { class: "fb-nut", x1: L.nutX, x2: L.nutX, y1: L.top, y2: L.bottom }));
+    g.push(el("polygon", { class: "fb-open", points: points(L.openCol) }));
+    if (L.edge) g.push(el("polygon", { class: "fb-edge", points: points(L.edge) }));
+    g.push(el("polygon", { class: "fb-wood", points: points(L.wood) }));
+    for (const d of L.sideDots) g.push(el("ellipse", { class: "fb-side", cx: d.cx, cy: d.cy, rx: d.rx, ry: d.ry }));
+    for (const d of L.inlays) g.push(el("ellipse", { class: "fb-inlay", cx: d.cx, cy: d.cy, rx: d.rx, ry: d.ry }));
+    for (const w of L.wires) g.push(line("fb-fret", w));
+    g.push(line("fb-nut", L.nut));
     for (const s of L.strings){
-      if (s.nutX !== null) g.push(el("circle", { class: "fb-spike", cx: s.nutX, cy: s.y, r: 3 }));
-      g.push(el("line", { class: "fb-string", x1: s.x0, x2: s.x1, y1: s.y, y2: s.y,
-        "stroke-width": gauge(s.open) }));
+      if (s.spike) g.push(el("circle", { class: "fb-spike", cx: s.spike[0], cy: s.spike[1], r: 3 }));
+      g.push(line("fb-string", s.line, { "stroke-width": gauge(s.open) }));
     }
     for (const nb of L.numbers) g.push(el("text", { class: "fb-num", x: nb.cx, y: nb.y }, String(nb.fret)));
 
@@ -157,7 +256,7 @@ export function createFretboard(host, { onTap } = {}){
     if (windowFrets){
       const [a, b] = windowFrets;
       for (const c of L.cells) if (c.fret < a || c.fret > b){
-        g.push(el("rect", { class: "fb-dim", x: c.x0, y: c.y0, width: c.x1 - c.x0, height: c.y1 - c.y0 }));
+        g.push(el("polygon", { class: "fb-dim", points: points(c.pts) }));
       }
     }
 
@@ -170,11 +269,10 @@ export function createFretboard(host, { onTap } = {}){
   function drawMark(parent, { pos, kind, text }){
     const c = cellOf(L, pos);
     if (!c) return;
-    const r = Math.min((c.x1 - c.x0) * 0.42, L.pitch * 0.46, 17);
     const g = el("g", { class: `fb-mark ${kind}` });
-    g.append(el("circle", { cx: c.cx, cy: c.cy, r }));
+    g.append(el("circle", { cx: c.cx, cy: c.cy, r: c.r }));
     // Sized to the label, so "C♯/D♭" fits the same circle as "E".
-    const size = Math.max(7, Math.min(r * 0.82, 2.6 * r / Math.max(1, [...(text ?? "")].length)));
+    const size = Math.max(7, Math.min(c.r * 0.82, 2.6 * c.r / Math.max(1, [...(text ?? "")].length)));
     if (text) g.append(el("text", { x: c.cx, y: c.cy, "font-size": size }, text));
     parent.append(g);
   }
