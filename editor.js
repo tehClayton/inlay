@@ -126,7 +126,7 @@ export function renderEditor(root, { inst, isNew, notePref, onSave, onCancel, on
   const VIEW_TEXT = {
     tab:     ["Tab", "low string at the bottom"],
     flipped: ["Flipped", "low string on top"],
-    player:  ["Player's view", "looking down at the neck"],
+    player:  ["Player's view", "looking down across the strings"],
   };
   const viewPick = h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "viewLabel" });
   function drawViews(){

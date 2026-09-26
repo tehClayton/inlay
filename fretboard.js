@@ -26,43 +26,35 @@ const PAD_X = 6;
 const PAD_TOP = 8;
 const NUMBERS_H = 16;      // the strip of fret numbers under the neck
 
-/* The player's view. Looking down at the neck from where you hold it, the
-   body end is nearest and the headstock end recedes: FAR is how tall the nut
-   end looks relative to the body end. A level neck rather than the diagonal
-   it really lies at, so it still spans the screen. EDGE is the side of the
-   fretboard you see from above, where the side dots sit, at the near end. */
-const FAR = 0.62;
+/* The player's view: the neck as you see it while playing, looking down
+   across the fretboard from above its low-string side, along the plane of
+   the strings. The string nearest your eye is nearest the screen's bottom
+   edge, and each string further away is foreshortened a little more, so the
+   gaps close up towards the far side: on a guitar, B to high E looks tighter
+   than low E to A.
+
+   That is a perspective along one axis only. Frets stay vertical and the
+   neck keeps its height from nut to body — really, the headstock end would
+   recede a little too, but a level, full-height neck is easier to read and
+   to hit, and the cross-string foreshortening is what makes the view.
+
+   FAR_SPACING is how wide the far edge's string spacing looks relative to the
+   near edge's. EDGE is the side of the fretboard you see from above, below
+   the near string, where the side dots sit. */
+const FAR_SPACING = 0.7;
 const EDGE = 7;
 
 /* ------------------------------------------------------------ projection */
 
-/* The projective map taking the unit square onto a quadrilateral, corners in
-   order (0,0) (1,0) (1,1) (0,1) — Heckbert's closed form. Straight lines stay
-   straight, which is why frets and strings can still be drawn as lines. */
-export function squareToQuad([[x0, y0], [x1, y1], [x2, y2], [x3, y3]]){
-  const sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
-  if (Math.abs(sx) < 1e-12 && Math.abs(sy) < 1e-12){
-    return [x1 - x0, x2 - x1, x0, y1 - y0, y2 - y1, y0, 0, 0];
-  }
-  const dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2;
-  const den = dx1 * dy2 - dx2 * dy1;
-  const g = (sx * dy2 - dx2 * sy) / den, h = (dx1 * sy - sx * dy1) / den;
-  return [x1 - x0 + g * x1, x3 - x0 + h * x3, x0, y1 - y0 + g * y1, y3 - y0 + h * y3, y0, g, h];
-}
-
-export function applyH([a, b, c, d, e, f, g, h], u, v){
-  const w = g * u + h * v + 1;
-  return [(a * u + b * v + c) / w, (d * u + e * v + f) / w];
-}
-
-/* The inverse map, from the adjugate of the 3x3 matrix, normalised so its
-   last entry is 1 like the forward map's. */
-export function invertH([a, b, c, d, e, f, g, h]){
-  const A = e - f * h, B = c * h - b, C = b * f - c * e;
-  const D = f * g - d, E = a - c * g, F = c * d - a * f;
-  const G = d * h - e * g, Hh = b * g - a * h, I = a * e - b * d;
-  return [A / I, B / I, C / I, D / I, E / I, F / I, G / I, Hh / I];
-}
+/* A one-dimensional perspective on [0, 1], 0 nearest the eye: t(v) =
+   (1+c)v / (1+cv). It fixes both ends, and its slope falls from (1+c) at
+   the near end to 1/(1+c) at the far end, so the far/near spacing ratio is
+   1/(1+c)², which sets c from FAR_SPACING. It is the projective map of a
+   line, so what is evenly spaced on the fretboard stays in order on screen
+   and simply closes up with distance. */
+const PERSPECTIVE_C = 1 / Math.sqrt(FAR_SPACING) - 1;
+export const recede = (v, c = PERSPECTIVE_C) => (1 + c) * v / (1 + c * v);
+export const unrecede = (t, c = PERSPECTIVE_C) => t / (1 + c - c * t);
 
 const dist = ([ax, ay], [bx, by]) => Math.hypot(bx - ax, by - ay);
 
@@ -96,15 +88,11 @@ export function layout(inst, { width, height }){
   const fx = x => (inst.leftHanded ? width - x : x);
   let proj = p => p, unproj = p => p;
   if (player){
-    const half = (bottom - top) / 2;
-    // Nut end far (left, shorter), body end near (right, full height).
-    const H = squareToQuad([[X0, mid - FAR * half], [X1, top], [X1, bottom], [X0, mid + FAR * half]]);
-    const Hi = invertH(H);
-    proj = ([x, y]) => applyH(H, (x - X0) / (X1 - X0), (y - top) / (bottom - top));
-    unproj = ([x, y]) => {
-      const [u, v] = applyH(Hi, x, y);
-      return [X0 + u * (X1 - X0), top + v * (bottom - top)];
-    };
+    // After the flip the near (face) side is at the bottom: v runs 0 there
+    // to 1 at the top, and only y changes.
+    const H = bottom - top;
+    proj = ([x, y]) => [x, bottom - H * recede((bottom - y) / H)];
+    unproj = ([x, y]) => [x, bottom - H * unrecede((bottom - y) / H)];
   }
   const T = ([x, y]) => { const [px, py] = proj([x, fy(y)]); return [fx(px), py]; };
   const Tinv = ([x, y]) => { const [ux, uy] = unproj([fx(x), y]); return [ux, fy(uy)]; };

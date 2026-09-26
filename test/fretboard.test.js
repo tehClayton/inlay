@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { layout, cellAt, cellOf, squareToQuad, applyH, invertH } from "../fretboard.js";
+import { layout, cellAt, cellOf, recede, unrecede } from "../fretboard.js";
 import { newInstrument } from "../instrument.js";
 import { parsePitch } from "../theory.js";
 
@@ -97,16 +97,33 @@ test("player's view: low string at the bottom, as seen looking down", () => {
   assert.ok(below(layout(guitar({ view: "player" }), BOX), LOW, HIGH));
 });
 
-test("player's view: the headstock end recedes", () => {
+test("player's view: strings close up away from the eye", () => {
   const L = layout(guitar({ view: "player" }), BOX);
-  const span = f => { const col = L.cells.filter(c => c.fret === f); return Math.max(...col.map(c => c.y1)) - Math.min(...col.map(c => c.y0)); };
-  assert.ok(span(1) < span(22) * 0.75, "the nut end should be visibly shorter");
-  for (let f = 2; f <= 22; f++) assert.ok(span(f) > span(f - 1), `fret ${f} not taller than ${f - 1}`);
-  // Perspective foreshortens the far end, counteracting the frets' own taper,
-  // so frets come out more even than flat: easier to hit near the nut too.
-  const flat = layout(guitar(), BOX);
-  const w = (M, f) => { const c = cellOf(M, { string: 3, fret: f }); return Math.abs(c.pts[1][0] - c.pts[0][0]); };
-  assert.ok(w(L, 1) / w(L, 12) < w(flat, 1) / w(flat, 12));
+  const y = i => L.strings[i].y;   // guitar: 0 is low E, nearest; 5 is high E, farthest
+  const gaps = [1, 2, 3, 4, 5].map(i => y(i - 1) - y(i));
+  for (let i = 1; i < gaps.length; i++) assert.ok(gaps[i] < gaps[i - 1], `gap ${i} not tighter`);
+  // B to high E looks a little tighter than low E to A.
+  const ratio = gaps[4] / gaps[0];
+  assert.ok(ratio > 0.7 && ratio < 0.9, `B–e / E–A = ${ratio.toFixed(2)}`);
+});
+
+test("player's view: the neck keeps its height and its frets stay upright", () => {
+  const L = layout(guitar({ view: "player" }), BOX), flat = layout(guitar(), BOX);
+  const span = M => f => { const col = M.cells.filter(c => c.fret === f); return Math.max(...col.map(c => c.y1)) - Math.min(...col.map(c => c.y0)); };
+  assert.ok(close(span(L)(1), span(L)(22)));
+  for (const [[x1], [x2]] of L.wires) assert.ok(close(x1, x2));
+  // Along the neck nothing changes: same fret positions as flat.
+  for (const c of L.cells) assert.ok(close(c.cx, cellOf(flat, c).cx));
+});
+
+test("the perspective fixes both ends and inverts exactly", () => {
+  assert.equal(recede(0), 0);
+  assert.ok(close(recede(1), 1));
+  for (let k = 0; k <= 40; k++){
+    const v = k / 40;
+    assert.ok(close(unrecede(recede(v)), v, 1e-12));
+    if (k) assert.ok(recede(v) > recede((k - 1) / 40));
+  }
 });
 
 test("player's view: the near edge and its side dots show below the low string", () => {
@@ -118,20 +135,6 @@ test("player's view: the near edge and its side dots show below the low string",
   for (const d of L.sideDots) assert.ok(d.cy > stringY(d.cx), `side dot at ${d.cx.toFixed(0)} above the string`);
   assert.deepEqual(L.sideDots.length, L.numbers.length);
   assert.equal(layout(guitar(), BOX).edge, null);
-});
-
-test("the projection maps the square's corners and inverts exactly", () => {
-  const q = [[10, 40], [300, 5], [300, 200], [10, 160]];
-  const H = squareToQuad(q), Hi = invertH(H);
-  [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(([u, v], i) => {
-    const [x, y] = applyH(H, u, v);
-    assert.ok(close(x, q[i][0]) && close(y, q[i][1]));
-  });
-  for (let k = 0; k < 50; k++){
-    const u = (k * 0.37) % 1, v = (k * 0.61) % 1;
-    const [x, y] = applyH(H, u, v), [u2, v2] = applyH(Hi, x, y);
-    assert.ok(close(u, u2, 1e-9) && close(v, v2, 1e-9));
-  }
 });
 
 test("a banjo's short string has no cells below its nut", () => {
@@ -179,7 +182,8 @@ test("outside the neck is not a position", () => {
     assert.equal(cellAt(L, BOX.width - 1, BOX.height / 2), null);
     assert.equal(cellAt(L, BOX.width / 2, BOX.height - 2), null);   // the fret-number strip
   }
-  // Above the receding nut end, inside the flat neck's box but off the drawn neck.
+  // The near edge, below the low string, is drawn but isn't a position.
   const P = layout(guitar({ view: "player" }), BOX);
-  assert.equal(cellAt(P, 20, P.top + 2), null);
+  const edgeY = (P.edge[0][1] + P.edge[3][1]) / 2;
+  assert.equal(cellAt(P, BOX.width / 2, edgeY), null);
 });

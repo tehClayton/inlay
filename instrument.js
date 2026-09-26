@@ -26,8 +26,8 @@ export const DEFAULT_FRETS  = 22;
    a guitar or bass is the low string:
      tab      face-side (low) string at the bottom, as in tab. The default.
      flipped  face-side string at the top.
-     player   tab's orientation seen from the player's eye, looking down at
-              the neck: in perspective, the headstock end receding. */
+     player   tab's orientation seen from the player's eye, looking down
+              across the strings: their spacing closes up away from you. */
 export const VIEWS = ["tab", "flipped", "player"];
 
 export function newInstrument(fields = {}, now = Date.now()){
