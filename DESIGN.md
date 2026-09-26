@@ -128,10 +128,14 @@ Every drill runs in the same loop:
 1. A prompt appears: a note name, a highlighted fret, a root and an interval, or a
    scale to fill in.
 2. You answer by tapping the fretboard, or the answer buttons in naming drills.
-3. Feedback is immediate. A correct answer flashes green. A wrong answer flashes the
-   tapped spot red and reveals the correct one, counts as a miss, and moves on.
-   There are no retries.
+3. Feedback is immediate. A correct answer flashes green, and the next prompt
+   follows after a beat. A wrong answer marks the tapped spot red, reveals the
+   correct one, counts as a miss, and waits for a tap anywhere, so you can look
+   for as long as you need. There are no retries.
 4. The next prompt appears.
+
+The **frets shown are the practice range**: every prompt is inside the window, and
+moving the neck bar mid-run moves the range.
 
 The loop runs **until you stop it**, the way millitap plays until you press stop.
 One run is one **session**, saved on stop.
@@ -140,16 +144,19 @@ One run is one **session**, saved on stop.
 
 | Drill | Prompt | Answer |
 | --- | --- | --- |
-| **Find the note** | A note name and a string ("F# on the A string") | Tap the fret |
-| **Find every** | A note name ("every G in frets 0–12") | Tap every occurrence in the window, any order |
+| **Find any** | A note name ("F♯") | Tap any position of it in view |
+| **Find on a string** | A note and a string ("F♯ on string 5 (A)") | Tap it on that string; either octave counts |
+| **Find all** | A note name ("Every F♯") | Tap every position of it in view, any order |
 | **Name the note** | A highlighted fret | Choose from 12 note buttons, or interval buttons when a root is set |
 | **Interval** | A highlighted root and an interval ("major 3rd above") | Tap any position of the target note inside the window |
 | **Chord tones** | A chord ("A minor") | Tap every chord tone in the window, any order |
 | **Scale** | A root and scale type ("D dorian, frets 5–8") | Tap every scale tone, in ascending pitch order or any order |
 
-"Find every", "Chord tones" and "Scale" share one **find-all** mechanic. The prompt
+"Find all", "Chord tones" and "Scale" share one **find-all** mechanic. The prompt
 stays up until every target in the window is found. Each correct tap is timed from
-the previous one, and each wrong tap is a miss.
+the previous one and counts as an answer; each wrong tap is a miss but doesn't end
+the prompt. Find any and find all choose notes evenly, not by how often they appear
+in the range.
 
 ### Drill options
 
@@ -416,7 +423,8 @@ Each milestone is a stack of small branches, `m<N>/<NN>-<desc>`. See
 - `theory.js`: pitch, pitch class, spelling, parsing `E2`-style tunings
 - Instruments: model, editor, save/switch/delete, handedness and string order
 - `fretboard.js`: rendering, fret window dimming, and hit-testing
-- Drills: find the note and name the note, with the continuous loop and feedback
+- Drills: find any, find on a string, find all, and name the note, with the
+  continuous loop and feedback; the find-all mechanic comes here, with find all
 - Sessions: aggregation and save-on-stop
 - Backup: export, import, and delete all
 - Keyboard and ARIA basics
@@ -426,8 +434,8 @@ Each milestone is a stack of small branches, `m<N>/<NN>-<desc>`. See
 **M2 — Progress.** `history.html`: heatmap, trend chart, by-note and by-string, and
 session table. Study mode.
 
-**M3 — Theory.** The interval, chord-tone and scale drills; the find-all mechanic
-(including "find every"); scale-degree labels; and the scale and chord library.
+**M3 — Theory.** The interval, chord-tone and scale drills, reusing M1's find-all
+mechanic; scale-degree labels; and the scale and chord library.
 
 **M4 — Practice tools.** Sets and playlists, adaptive weighting, and audio.
 
