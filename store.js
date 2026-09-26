@@ -7,7 +7,7 @@
    reads fall back to empty and writes report failure instead of throwing.
 
    Sessions and sets join this file in later milestones. */
-import { validate as validateInstrument } from "./instrument.js";
+import { validate as validateInstrument, upgrade as upgradeInstrument } from "./instrument.js";
 import { NOTE_PREFS } from "./theory.js";
 
 export const KEYS = {
@@ -35,11 +35,14 @@ function write(key, value){
 
 /* ---------------------------------------------------------- instruments */
 
-/* Anything that doesn't validate is dropped rather than half-used: a record
-   the app can't draw is worse than one it doesn't show. */
+/* Older shapes are upgraded on the way in. Anything that still doesn't
+   validate is dropped rather than half-used: a record the app can't draw is
+   worse than one it doesn't show. */
 export function loadInstruments(){
   const list = read(KEYS.instruments, []);
-  return Array.isArray(list) ? list.filter(x => validateInstrument(x).length === 0) : [];
+  return Array.isArray(list)
+    ? list.map(upgradeInstrument).filter(x => validateInstrument(x).length === 0)
+    : [];
 }
 
 /* Insert or replace by id, stamping `updated`. Returns false if the write

@@ -22,6 +22,69 @@ export const MAX_NAME    = 40;
 export const DEFAULT_TUNING = ["E2", "A2", "D3", "G3", "B3", "E4"];
 export const DEFAULT_FRETS  = 22;
 
+/* How the neck is drawn: a camera looking at a real neck. Rotations are about
+   the screen's axes, applied to a neck lying level with its bass edge
+   nearest you:
+
+     flip         false: the bass edge (the face-side string, a guitar's low
+                  E) at the bottom, as in tab. true: at the top.
+     tilt         about x, degrees: the face tips away, bass edge towards you.
+                  Strings flatten and close up away from you, the far long
+                  edge shortens, and the side of the fretboard comes into view.
+     turn         about y, degrees: the headstock end swings away.
+     angle        about z, degrees: the neck turned on screen, headstock up.
+     perspective  how close the eye is, 0–1: 0 is none (parallel lines stay
+                  parallel), 1 is close enough that the far side is clearly
+                  smaller. Tilt and turn only look like depth with some.
+     edge         how deep the fretboard's side is, 0–1 of a string gap. Tilt
+                  is what shows it; with no tilt it is edge-on and unseen.
+
+   Presets are named starting points. Any other combination is "custom". */
+export const VIEW_PRESETS = Object.freeze({
+  tab:     Object.freeze({ flip: false, tilt: 0,  turn: 0, angle: 0, perspective: 0,    edge: 0.4 }),
+  flipped: Object.freeze({ flip: true,  tilt: 0,  turn: 0, angle: 0, perspective: 0,    edge: 0.4 }),
+  // Tuned by eye on a real board: B–E at about 71% of E–A, nut end at 92%.
+  player:  Object.freeze({ flip: false, tilt: 54, turn: 6, angle: 5, perspective: 0.8,  edge: 0.5 }),
+});
+
+/* Tilt and turn stop short of 90°, where the fretboard would be edge-on with
+   nothing left to tap. Steep settings do make frets small; the editor warns
+   when they get too small for a fingertip rather than forbidding them. */
+export const VIEW_RANGES = Object.freeze({
+  tilt:        [0, 80],
+  turn:        [0, 80],
+  angle:       [0, 90],
+  perspective: [0, 1],
+  edge:        [0, 1],
+});
+
+/* How many frets the board shows at once, set alongside the view but not
+   part of any preset: 0 shows the whole neck; otherwise that many fretted
+   positions, which a position slider moves along the neck. At the nut end
+   the open strings come too, as fret 0. */
+export const MIN_SPAN = 3;
+
+/* The frets on screen, [first, last] inclusive, for a window whose first
+   fret is `from` (clamped to the neck). 0 is the open strings. */
+export function fretRange(inst, from = 0){
+  const span = inst.view.span;
+  if (!span || span >= inst.frets) return [0, inst.frets];
+  const first = Math.max(0, Math.min(inst.frets - span + 1, Math.round(from)));
+  return [first, first === 0 ? span : first + span - 1];
+}
+
+/* The furthest the window can move: its first fret at the far end. */
+export const lastFrom = inst =>
+  !inst.view.span || inst.view.span >= inst.frets ? 0 : inst.frets - inst.view.span + 1;
+
+const near = (a, b) => Math.abs(a - b) < 1e-6;
+export const sameView = (a, b) =>
+  a.flip === b.flip && Object.keys(VIEW_RANGES).every(k => near(a[k], b[k]));
+
+/* The preset a view matches, or null for a custom one. */
+export const presetOf = view =>
+  Object.keys(VIEW_PRESETS).find(k => sameView(VIEW_PRESETS[k], view)) ?? null;
+
 export function newInstrument(fields = {}, now = Date.now()){
   return {
     id: crypto.randomUUID(),
@@ -29,14 +92,60 @@ export function newInstrument(fields = {}, now = Date.now()){
     strings: DEFAULT_TUNING.map(t => ({ open: parsePitch(t), start: 0 })),
     frets: DEFAULT_FRETS,
     leftHanded: false,
-    /* Off: the string nearest your face is drawn at the top, as you see it
-       looking down at the neck. On: flipped, the way tab and most diagrams
-       draw it, with the floor-side string at the top. */
-    tabView: false,
+    view: { ...VIEW_PRESETS.player, span: 0 },
     ...fields,
     created: now,
     updated: now,
   };
+}
+
+/* Brings an older stored shape up to date; anything else passes through for
+   validate() to judge. Earlier shapes, oldest first:
+     tabView: true|false   true put the bass edge at the bottom, as tab does
+     view: "tab" | "flipped" | "player"   the presets, by name
+     view: { flip, squeeze, recession, angle, edge }   effect settings, which
+       have no exact camera equivalent: squeeze becomes the player preset's
+       tilt and perspective, recession a turn, and angle carries over. */
+export function upgrade(x){
+  if (!x || typeof x !== "object") return x;
+  let out = x;
+  if (!("view" in out) && typeof out.tabView === "boolean"){
+    const { tabView, ...rest } = out;
+    out = { ...rest, view: tabView ? "tab" : "flipped" };
+  }
+  if (typeof out.view === "string" && out.view in VIEW_PRESETS){
+    out = { ...out, view: { ...VIEW_PRESETS[out.view] } };
+  }
+  const v = out.view;
+  if (v && typeof v === "object" && "squeeze" in v && !("tilt" in v)){
+    const squeezed = v.squeeze < 1, receded = v.recession < 1;
+    out = { ...out, view: {
+      flip: v.flip,
+      tilt: squeezed ? VIEW_PRESETS.player.tilt : 0,
+      turn: receded ? 25 : 0,
+      angle: v.angle,
+      perspective: squeezed || receded ? VIEW_PRESETS.player.perspective : 0,
+      edge: VIEW_PRESETS.tab.edge,
+    }};
+  }
+  // Every view before `span` existed showed the whole neck.
+  if (out.view && typeof out.view === "object" && !("span" in out.view)){
+    out = { ...out, view: { ...out.view, span: 0 } };
+  }
+  return out;
+}
+
+function viewErrors(v){
+  if (!v || typeof v !== "object") return ["view missing"];
+  const errs = [];
+  if (typeof v.flip !== "boolean") errs.push("view.flip not true/false");
+  for (const [k, [lo, hi]] of Object.entries(VIEW_RANGES)){
+    if (!Number.isFinite(v[k]) || v[k] < lo - 1e-9 || v[k] > hi + 1e-9) errs.push(`view.${k} not ${lo}–${hi}`);
+  }
+  if (!(v.span === 0 || (Number.isInteger(v.span) && v.span >= MIN_SPAN && v.span <= MAX_FRETS))){
+    errs.push(`view.span not 0 or ${MIN_SPAN}–${MAX_FRETS}`);
+  }
+  return errs;
 }
 
 const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -60,9 +169,8 @@ export function validate(x){
       }
     });
   }
-  for (const k of ["leftHanded", "tabView"]){
-    if (typeof x[k] !== "boolean") errs.push(`${k} not true/false`);
-  }
+  if (typeof x.leftHanded !== "boolean") errs.push("leftHanded not true/false");
+  errs.push(...viewErrors(x.view));
   for (const k of ["created", "updated"]){
     if (!Number.isFinite(x[k])) errs.push(`${k} missing`);
   }

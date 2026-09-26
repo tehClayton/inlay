@@ -4,7 +4,7 @@ import {
   KEYS, loadInstruments, saveInstrument, deleteInstrument,
   loadSettings, saveSettings, SETTINGS_DEFAULTS,
 } from "../store.js";
-import { newInstrument } from "../instrument.js";
+import { newInstrument, VIEW_PRESETS } from "../instrument.js";
 
 /* A stand-in for localStorage, with a switch to make it behave the way a
    blocked or full store does: every access throws. */
@@ -47,6 +47,15 @@ test("stored records that no longer validate are dropped on load", () => {
   const good = newInstrument();
   store.setItem(KEYS.instruments, JSON.stringify([good, { id: "x" }, null]));
   assert.deepEqual(loadInstruments().map(x => x.id), [good.id]);
+});
+
+test("instruments stored in the old shape load upgraded, not dropped", () => {
+  const { view, ...old } = newInstrument({ name: "Old" });
+  store.setItem(KEYS.instruments, JSON.stringify([{ ...old, tabView: false }]));
+  const [loaded] = loadInstruments();
+  assert.equal(loaded.name, "Old");
+  assert.deepEqual(loaded.view, { ...VIEW_PRESETS.flipped, span: 0 });
+  assert.ok(!("tabView" in loaded));
 });
 
 test("corrupt JSON reads as empty", () => {
