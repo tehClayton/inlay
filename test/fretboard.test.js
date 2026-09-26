@@ -126,11 +126,37 @@ test("the camera takes face points to the screen and back exactly", () => {
   }
 });
 
-test("tilt without perspective only flattens: strings stay evenly spaced", () => {
-  const L = layout(guitar({ view: { tilt: 40 } }), BOX), flat = layout(guitar(), BOX);
+test("tilt without perspective: strings stay evenly spaced", () => {
+  const L = layout(guitar({ view: { tilt: 40 } }), BOX);
   assert.ok(close(readout(L).gaps, 1, 1e-9));
-  const h = M => { const a = cellOf(M, { string: 0, fret: 12 }), b = cellOf(M, { string: 5, fret: 12 }); return Math.hypot(b.cx - a.cx, b.cy - a.cy); };
-  assert.ok(close(h(L) / h(flat), Math.cos(40 * Math.PI / 180), 1e-6));
+});
+
+/* Tilt draws a neck shorter; the layout makes the flat neck taller to make
+   up for it, so the board has no empty bands above and below. */
+test("a tilted neck still fills the board's height", () => {
+  const span = M => {
+    const c = M.cells.filter(c => c.inWindow).flatMap(c => c.pts.map(p => p[1]));
+    return Math.max(...c) - Math.min(...c);
+  };
+  const flat = layout(guitar(), BOX);
+  for (const tilt of [35, 54, 70]){
+    const L = layout(guitar({ view: { tilt, perspective: 0.8 } }), BOX);
+    assert.ok(L.stretch > 1, `tilt ${tilt}: no stretch`);
+    // The side edge a tilt reveals takes some of the height, more the steeper
+    // it gets, so not all of it; without the stretch a 54° tilt covered about
+    // 60%, and 70° about 35%.
+    assert.ok(span(L) > span(flat) * 0.8, `tilt ${tilt}: neck ${span(L).toFixed(0)}px of ${span(flat).toFixed(0)}`);
+  }
+  // Flat views already fill, and are left exactly as they were.
+  assert.equal(flat.stretch, 1);
+  assert.equal(layout(guitar({ view: "flipped" }), BOX).stretch, 1);
+});
+
+test("stretch only makes up for tilt, so a steep angle alone doesn't make a huge neck", () => {
+  // Vertical and untilted: a wide board would "want" a very thick neck.
+  assert.ok(layout(guitar({ view: { angle: 90 } }), BOX).stretch <= 1.15 + 1e-9);
+  const t = 60, L = layout(guitar({ view: { tilt: t, angle: 90 } }), BOX);
+  assert.ok(L.stretch <= 1.15 / Math.cos(t * Math.PI / 180) + 1e-9);
 });
 
 test("tilt with perspective: strings close up away from the eye, and the far edge shortens", () => {

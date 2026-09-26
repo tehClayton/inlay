@@ -34,8 +34,8 @@ export const INLAY_DOUBLE = [12, 24];
 
 const OPEN_WEIGHT = 0.8;   // the open-string column, relative to fret 1
 const PAD_X = 6;
-const PAD_TOP = 8;
-const NUMBERS_H = 16;      // the strip of fret numbers under the neck
+const PAD_TOP = 4;
+const NUMBERS_H = 14;      // the strip of fret numbers under the neck
 const FIT_MARGIN = 2;
 
 /* Perspective 1 puts the eye this many board-heights away divided into one:
@@ -110,16 +110,44 @@ export function camera({ tilt, turn, perspective, bassSign }, height, halfLength
    the position: its frets span the board's width. The neck then carries on
    past it at the same scale, to the screen's edges or to the neck's own
    ends — the nut, or the last fret — whichever comes first. Cells say
-   whether they are `inWindow`. */
-export function layout(inst, { width, height }, from = 0){
+   whether they are `inWindow`.
+
+   The window also fills the board's height. A tilted neck is drawn shorter
+   than a flat one (at 54° about 60% as tall), which would leave bands of
+   empty board above and below it; so the flat neck is made taller by
+   whatever `stretch` brings the drawn window to the board's proportions.
+   Perspective scales with the neck, so the tilt's squeeze, keystone and
+   edge look the same — the neck just isn't short. Stretch only makes up what
+   tilt took (plus a little for the edge it reveals), so an angled but untilted
+   neck isn't made absurdly thick to fill a wide board. */
+const maxStretch = v => Math.min(6, 1.15 / Math.cos(rad(v.tilt)));
+/* Near enough: a flat neck is a few percent short of the board's proportions
+   (the fret numbers take a strip), and isn't worth changing for that. */
+const FILLED = 0.05;
+
+export function layout(inst, box, from = 0){
+  const want = (box.height - 2 * FIT_MARGIN) / (box.width - 2 * FIT_MARGIN);
+  let stretch = 1, L = layoutAt(inst, box, from, stretch);
+  for (let i = 0; i < 4; i++){
+    const have = L.bounds.h / L.bounds.w;
+    if (have >= want * (1 - FILLED)) break;       // tall enough; fit handles any excess
+    const next = Math.max(1, Math.min(maxStretch(inst.view), stretch * want / have));
+    if (Math.abs(next - stretch) < 1e-3) break;
+    stretch = next;
+    L = layoutAt(inst, box, from, stretch);
+  }
+  return L;
+}
+
+function layoutAt(inst, { width, height }, from, stretch){
   const v = inst.view;
   const n = inst.strings.length;
   const [first, last] = fretRange(inst, from);
-  const top = PAD_TOP;
-  const bottom = Math.max(top + n * 8, height - NUMBERS_H - 4);
-  const H = bottom - top;
+  const H0 = Math.max(n * 8, height - NUMBERS_H - 4 - PAD_TOP);
+  const mid = PAD_TOP + H0 / 2;
+  const H = H0 * stretch;
+  const top = mid - H / 2, bottom = mid + H / 2;
   const pitch = H / n;                          // vertical space per string
-  const mid = (top + bottom) / 2;
 
   /* Flat x for the whole neck: wire[f] is the right-hand edge of fret f and
      wire[0] the nut. Each fret keeps its width from the neck's taper, scaled
@@ -296,7 +324,8 @@ export function layout(inst, { width, height }, from = 0){
   const nut = openShown ? wireSeg(wire[0]) : null;
 
   return {
-    width, height, top, bottom, pitch, view: v, range: [first, last],
+    width, height, top, bottom, pitch, view: v, range: [first, last], stretch,
+    bounds: { w: bx1 - bx0, h: by1 - by0 },   // the window before fitting: what stretch reads
     wood: quad(neckStart, top, DX1, bottom),
     openCol: openShown ? quad(left(0), top, wire[0], bottom) : null,
     nut, wires,
