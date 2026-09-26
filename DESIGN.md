@@ -313,7 +313,9 @@ it is installed to the home screen. inlay:
 - **Readouts:** accuracy, typical time and answer count for the running session, in
   millitap's readout style.
 - **Frets shown:** a − / + control for how many frets the board shows at once,
-  from 3 up to the whole neck. Fewer frets means bigger targets.
+  from 3 up to the whole neck. Fewer frets means bigger targets. Those frets
+  span the board, and the neck carries on past them at the same scale to the
+  screen's edges, or to the nut or last fret if those come first.
 - **Neck bar:** when the board shows part of the neck, a miniature of the whole
   neck above it, with the part in view picked out. Drag or tap it to move up
   and down the neck, or use the arrow keys. Drills use the same control.

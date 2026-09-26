@@ -233,7 +233,8 @@
   /* The fretboard fills the well; the SVG's viewBox is set to the well's
      pixel size, so strokes and text stay crisp at any size. */
   .board.live{display:block;touch-action:none}
-  .fb{display:block;width:100%;height:100%}
+  /* Clipped: with part of the neck shown, the rest runs off the edges. */
+  .fb{display:block;width:100%;height:100%;overflow:hidden}
   .fb-wood{fill:url(#fbWood)}
   .fb-open{fill:rgba(255,255,255,.02)}
   .fb-fret{stroke:var(--fret);stroke-width:2;stroke-linecap:round}
