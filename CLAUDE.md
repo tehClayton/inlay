@@ -51,3 +51,27 @@ within the prefix (e.g. `refactor/01-extract-ingest`, `refactor/02-rewire-caller
 
 - One logical change per commit; keep them small and tidy with descriptive messages.
 - End each commit message with a `Co-Authored-By` trailer for the model that wrote it.
+
+## Development
+
+No build step and no packages. Node (any current version) is needed only to run the
+tests, which use its built-in runner:
+
+```
+node --test
+```
+
+Tests live in `test/` and are not deployed. Keep logic that can be tested in pure ES
+modules with no DOM access at import time, so the tests can import them directly.
+
+To preview locally, serve the repo root, e.g. `python3 -m http.server 8000`.
+
+### Deploying changes
+
+`sw.js` caches the app, cache-first. Two rules follow, and both are checked by
+`scripts/dev/pre-push-check.sh` (run by the pre-push hook) and `test/deploy.test.js`:
+
+- **Bump `VERSION` in `sw.js`** in any change to files GitHub Pages serves.
+  Without it, installed apps never see the change.
+- **Add every new served file to `ASSETS` in `sw.js`.** A file the app loads but
+  doesn't cache works online and breaks only offline.
