@@ -16,6 +16,7 @@ const ASSETS = [
   "./store.js",
   "./editor.js",
   "./fretboard.js",
+  "./drills.js",
   "./manifest.webmanifest",
   "./apple-touch-icon.png",
   "./icon-192.png",
