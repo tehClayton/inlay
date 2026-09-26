@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   newInstrument, validate, upgrade, pitchAt, summary, stringNumber, MAX_STRINGS,
+  VIEW_PRESETS, VIEW_RANGES, presetOf, sameView,
 } from "../instrument.js";
 import { parsePitch } from "../theory.js";
 
@@ -61,24 +62,54 @@ test("a banjo's short fifth string starts at fret 5", () => {
 
 test("validate names each problem", () => {
   const g = newInstrument();
-  const bad = { ...g, name: " ", frets: 0, strings: [{ open: 200, start: 0 }], view: "sideways" };
+  const bad = { ...g, name: " ", frets: 0, strings: [{ open: 200, start: 0 }],
+                view: { ...g.view, squeeze: 0.1, flip: "no" } };
   const errs = validate(bad);
   assert.ok(errs.includes("name missing"));
   assert.ok(errs.includes("frets not 1–36"));
   assert.ok(errs.includes("string 1: pitch not 0–127"));
-  assert.ok(errs.includes("view not one of tab, flipped, player"));
+  assert.ok(errs.includes("view.squeeze not 0.5–1"));
+  assert.ok(errs.includes("view.flip not true/false"));
+  assert.ok(validate({ ...g, view: "tab" }).includes("view missing"));
 });
 
-test("new instruments default to tab view: low string at the bottom", () => {
-  assert.equal(newInstrument().view, "tab");
+test("new instruments default to the tab preset: low string at the bottom, flat", () => {
+  const g = newInstrument();
+  assert.deepEqual(g.view, VIEW_PRESETS.tab);
+  assert.equal(presetOf(g.view), "tab");
+  g.view.angle = 5;                                  // a copy, not the frozen preset
+  assert.equal(VIEW_PRESETS.tab.angle, 0);
 });
 
-test("the old tabView flag upgrades to a view", () => {
+test("every preset is a valid view, and anything else is custom", () => {
+  for (const [name, v] of Object.entries(VIEW_PRESETS)){
+    assert.deepEqual(validate(newInstrument({ view: { ...v } })), []);
+    assert.equal(presetOf(v), name);
+  }
+  assert.equal(presetOf({ ...VIEW_PRESETS.player, angle: 12 }), null);
+  assert.ok(sameView(VIEW_PRESETS.player, { ...VIEW_PRESETS.player, squeeze: 0.7 + 1e-9 }));
+});
+
+test("view ranges are enforced at both ends", () => {
+  const g = newInstrument();
+  for (const [k, [lo, hi]] of Object.entries(VIEW_RANGES)){
+    assert.deepEqual(validate({ ...g, view: { ...g.view, [k]: lo } }), [], `${k} at ${lo}`);
+    assert.deepEqual(validate({ ...g, view: { ...g.view, [k]: hi } }), [], `${k} at ${hi}`);
+    assert.ok(validate({ ...g, view: { ...g.view, [k]: hi + 1 } }).length, `${k} above`);
+    assert.ok(validate({ ...g, view: { ...g.view, [k]: lo - 1 } }).length, `${k} below`);
+  }
+});
+
+test("older view shapes upgrade to the preset values", () => {
   const { view, ...old } = newInstrument();
-  assert.deepEqual(upgrade({ ...old, tabView: true }), { ...old, view: "tab" });
-  assert.deepEqual(upgrade({ ...old, tabView: false }), { ...old, view: "flipped" });
-  const current = newInstrument({ view: "player" });
+  assert.deepEqual(upgrade({ ...old, tabView: true }), { ...old, view: VIEW_PRESETS.tab });
+  assert.deepEqual(upgrade({ ...old, tabView: false }), { ...old, view: VIEW_PRESETS.flipped });
+  for (const name of Object.keys(VIEW_PRESETS)){
+    assert.deepEqual(upgrade({ ...old, view: name }), { ...old, view: VIEW_PRESETS[name] });
+  }
+  const current = newInstrument({ view: { ...VIEW_PRESETS.player, angle: 20 } });
   assert.equal(upgrade(current), current);                 // already current: untouched
+  assert.equal(upgrade({ ...old, view: "sideways" }).view, "sideways");   // left for validate
   assert.equal(upgrade(null), null);
 });
 

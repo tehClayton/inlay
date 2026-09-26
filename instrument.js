@@ -22,13 +22,43 @@ export const MAX_NAME    = 40;
 export const DEFAULT_TUNING = ["E2", "A2", "D3", "G3", "B3", "E4"];
 export const DEFAULT_FRETS  = 22;
 
-/* How the neck is drawn. Named by where the face-side string lands, which on
-   a guitar or bass is the low string:
-     tab      face-side (low) string at the bottom, as in tab. The default.
-     flipped  face-side string at the top.
-     player   tab's orientation seen from the player's eye, looking down
-              across the strings: their spacing closes up away from you. */
-export const VIEWS = ["tab", "flipped", "player"];
+/* How the neck is drawn. Described by what you see, not by where an eye
+   would be, so each setting changes one visible thing:
+
+     flip       false: the bass edge (the face-side string, a guitar's low E)
+                at the bottom, as in tab. true: at the top.
+     squeeze    string spacing across the neck closes up away from the bass
+                edge, as seen by an eye above that edge. The far edge's
+                spacing as a fraction of the near edge's; 1 is none.
+     recession  the headstock end drawn smaller, as if receding. Its height
+                as a fraction of the body end's; 1 is none.
+     angle      the neck turned on screen, headstock end up, in degrees.
+     edge       the side of the fretboard along the bass edge, with its side
+                dots, as a fraction of one string gap; 0 is hidden.
+
+   Presets are named starting points. Any other combination is "custom". */
+export const VIEW_PRESETS = Object.freeze({
+  tab:     Object.freeze({ flip: false, squeeze: 1,   recession: 1, angle: 0, edge: 0 }),
+  flipped: Object.freeze({ flip: true,  squeeze: 1,   recession: 1, angle: 0, edge: 0 }),
+  player:  Object.freeze({ flip: false, squeeze: 0.7, recession: 1, angle: 0, edge: 0.2 }),
+});
+
+/* Past these, frets get too small to tap on a phone or the neck stops
+   reading as a neck. */
+export const VIEW_RANGES = Object.freeze({
+  squeeze:   [0.5, 1],
+  recession: [0.6, 1],
+  angle:     [0, 30],
+  edge:      [0, 1],
+});
+
+const near = (a, b) => Math.abs(a - b) < 1e-6;
+export const sameView = (a, b) =>
+  a.flip === b.flip && Object.keys(VIEW_RANGES).every(k => near(a[k], b[k]));
+
+/* The preset a view matches, or null for a custom one. */
+export const presetOf = view =>
+  Object.keys(VIEW_PRESETS).find(k => sameView(VIEW_PRESETS[k], view)) ?? null;
 
 export function newInstrument(fields = {}, now = Date.now()){
   return {
@@ -37,7 +67,7 @@ export function newInstrument(fields = {}, now = Date.now()){
     strings: DEFAULT_TUNING.map(t => ({ open: parsePitch(t), start: 0 })),
     frets: DEFAULT_FRETS,
     leftHanded: false,
-    view: "tab",
+    view: { ...VIEW_PRESETS.tab },
     ...fields,
     created: now,
     updated: now,
@@ -45,13 +75,30 @@ export function newInstrument(fields = {}, now = Date.now()){
 }
 
 /* Brings an older stored shape up to date; anything else passes through for
-   validate() to judge. The first builds stored `tabView: true|false`, where
-   true put the face-side string at the bottom — today's "tab" — and false at
-   the top. */
+   validate() to judge. Two earlier shapes:
+     tabView: true|false  — true put the bass edge at the bottom, as tab does
+     view: "tab" | "flipped" | "player"  — the presets, by name */
 export function upgrade(x){
-  if (!x || typeof x !== "object" || "view" in x || typeof x.tabView !== "boolean") return x;
-  const { tabView, ...rest } = x;
-  return { ...rest, view: tabView ? "tab" : "flipped" };
+  if (!x || typeof x !== "object") return x;
+  let out = x;
+  if (!("view" in out) && typeof out.tabView === "boolean"){
+    const { tabView, ...rest } = out;
+    out = { ...rest, view: tabView ? "tab" : "flipped" };
+  }
+  if (typeof out.view === "string" && out.view in VIEW_PRESETS){
+    out = { ...out, view: { ...VIEW_PRESETS[out.view] } };
+  }
+  return out;
+}
+
+function viewErrors(v){
+  if (!v || typeof v !== "object") return ["view missing"];
+  const errs = [];
+  if (typeof v.flip !== "boolean") errs.push("view.flip not true/false");
+  for (const [k, [lo, hi]] of Object.entries(VIEW_RANGES)){
+    if (!Number.isFinite(v[k]) || v[k] < lo - 1e-9 || v[k] > hi + 1e-9) errs.push(`view.${k} not ${lo}–${hi}`);
+  }
+  return errs;
 }
 
 const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -76,7 +123,7 @@ export function validate(x){
     });
   }
   if (typeof x.leftHanded !== "boolean") errs.push("leftHanded not true/false");
-  if (!VIEWS.includes(x.view)) errs.push(`view not one of ${VIEWS.join(", ")}`);
+  errs.push(...viewErrors(x.view));
   for (const k of ["created", "updated"]){
     if (!Number.isFinite(x[k])) errs.push(`${k} missing`);
   }

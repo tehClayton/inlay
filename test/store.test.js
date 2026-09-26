@@ -4,7 +4,7 @@ import {
   KEYS, loadInstruments, saveInstrument, deleteInstrument,
   loadSettings, saveSettings, SETTINGS_DEFAULTS,
 } from "../store.js";
-import { newInstrument } from "../instrument.js";
+import { newInstrument, VIEW_PRESETS } from "../instrument.js";
 
 /* A stand-in for localStorage, with a switch to make it behave the way a
    blocked or full store does: every access throws. */
@@ -54,7 +54,7 @@ test("instruments stored in the old shape load upgraded, not dropped", () => {
   store.setItem(KEYS.instruments, JSON.stringify([{ ...old, tabView: false }]));
   const [loaded] = loadInstruments();
   assert.equal(loaded.name, "Old");
-  assert.equal(loaded.view, "flipped");
+  assert.deepEqual(loaded.view, VIEW_PRESETS.flipped);
   assert.ok(!("tabView" in loaded));
 });
 
