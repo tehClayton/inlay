@@ -22,6 +22,14 @@ export const MAX_NAME    = 40;
 export const DEFAULT_TUNING = ["E2", "A2", "D3", "G3", "B3", "E4"];
 export const DEFAULT_FRETS  = 22;
 
+/* How the neck is drawn. Named by where the face-side string lands, which on
+   a guitar or bass is the low string:
+     tab      face-side (low) string at the bottom, as in tab. The default.
+     flipped  face-side string at the top.
+     player   tab's orientation seen from the player's eye, looking down at
+              the neck: in perspective, the headstock end receding. */
+export const VIEWS = ["tab", "flipped", "player"];
+
 export function newInstrument(fields = {}, now = Date.now()){
   return {
     id: crypto.randomUUID(),
@@ -29,14 +37,21 @@ export function newInstrument(fields = {}, now = Date.now()){
     strings: DEFAULT_TUNING.map(t => ({ open: parsePitch(t), start: 0 })),
     frets: DEFAULT_FRETS,
     leftHanded: false,
-    /* Off: the string nearest your face is drawn at the top, as you see it
-       looking down at the neck. On: flipped, the way tab and most diagrams
-       draw it, with the floor-side string at the top. */
-    tabView: false,
+    view: "tab",
     ...fields,
     created: now,
     updated: now,
   };
+}
+
+/* Brings an older stored shape up to date; anything else passes through for
+   validate() to judge. The first builds stored `tabView: true|false`, where
+   true put the face-side string at the bottom — today's "tab" — and false at
+   the top. */
+export function upgrade(x){
+  if (!x || typeof x !== "object" || "view" in x || typeof x.tabView !== "boolean") return x;
+  const { tabView, ...rest } = x;
+  return { ...rest, view: tabView ? "tab" : "flipped" };
 }
 
 const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -60,9 +75,8 @@ export function validate(x){
       }
     });
   }
-  for (const k of ["leftHanded", "tabView"]){
-    if (typeof x[k] !== "boolean") errs.push(`${k} not true/false`);
-  }
+  if (typeof x.leftHanded !== "boolean") errs.push("leftHanded not true/false");
+  if (!VIEWS.includes(x.view)) errs.push(`view not one of ${VIEWS.join(", ")}`);
   for (const k of ["created", "updated"]){
     if (!Number.isFinite(x[k])) errs.push(`${k} missing`);
   }

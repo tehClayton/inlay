@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newInstrument, validate, pitchAt, summary, stringNumber, MAX_STRINGS } from "../instrument.js";
+import {
+  newInstrument, validate, upgrade, pitchAt, summary, stringNumber, MAX_STRINGS,
+} from "../instrument.js";
 import { parsePitch } from "../theory.js";
 
 const P = parsePitch;
@@ -59,12 +61,25 @@ test("a banjo's short fifth string starts at fret 5", () => {
 
 test("validate names each problem", () => {
   const g = newInstrument();
-  const bad = { ...g, name: " ", frets: 0, strings: [{ open: 200, start: 0 }], tabView: "no" };
+  const bad = { ...g, name: " ", frets: 0, strings: [{ open: 200, start: 0 }], view: "sideways" };
   const errs = validate(bad);
   assert.ok(errs.includes("name missing"));
   assert.ok(errs.includes("frets not 1–36"));
   assert.ok(errs.includes("string 1: pitch not 0–127"));
-  assert.ok(errs.includes("tabView not true/false"));
+  assert.ok(errs.includes("view not one of tab, flipped, player"));
+});
+
+test("new instruments default to tab view: low string at the bottom", () => {
+  assert.equal(newInstrument().view, "tab");
+});
+
+test("the old tabView flag upgrades to a view", () => {
+  const { view, ...old } = newInstrument();
+  assert.deepEqual(upgrade({ ...old, tabView: true }), { ...old, view: "tab" });
+  assert.deepEqual(upgrade({ ...old, tabView: false }), { ...old, view: "flipped" });
+  const current = newInstrument({ view: "player" });
+  assert.equal(upgrade(current), current);                 // already current: untouched
+  assert.equal(upgrade(null), null);
 });
 
 test("validate rejects junk without throwing", () => {

@@ -49,6 +49,15 @@ test("stored records that no longer validate are dropped on load", () => {
   assert.deepEqual(loadInstruments().map(x => x.id), [good.id]);
 });
 
+test("instruments stored in the old shape load upgraded, not dropped", () => {
+  const { view, ...old } = newInstrument({ name: "Old" });
+  store.setItem(KEYS.instruments, JSON.stringify([{ ...old, tabView: false }]));
+  const [loaded] = loadInstruments();
+  assert.equal(loaded.name, "Old");
+  assert.equal(loaded.view, "flipped");
+  assert.ok(!("tabView" in loaded));
+});
+
 test("corrupt JSON reads as empty", () => {
   store.setItem(KEYS.instruments, "{not json");
   assert.deepEqual(loadInstruments(), []);
