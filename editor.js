@@ -7,7 +7,7 @@
 import { h, label } from "./ui.js";
 import { parsePitch, pitchName, noteName } from "./theory.js";
 import {
-  validate, stringNumber, VIEW_PRESETS, VIEW_RANGES, presetOf,
+  validate, stringNumber, VIEW_PRESETS, VIEW_RANGES, presetOf, MIN_SPAN,
   MAX_STRINGS, MAX_FRETS, MAX_NAME,
 } from "./instrument.js";
 import { createFretboard, layout, readout, smallestCell } from "./fretboard.js";
@@ -187,6 +187,23 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
   const flip = h("input", { type: "checkbox",
     onchange: e => { draft.view.flip = e.target.checked; refreshView(build()); } });
 
+  /* Frets shown at a time: the same setting as the − / + above the board.
+     The slider runs up to this neck's own fret count, and the top of it is
+     "all", stored as 0 so the whole neck stays whole if frets are added. */
+  const neckFrets = () => {
+    const f = int(draft.frets);
+    return f >= 1 && f <= MAX_FRETS ? f : (lastGood ? lastGood.frets : MAX_FRETS);
+  };
+  const spanOut = h("output", { class: "val" });
+  const spanInput = h("input", { type: "range", step: 1,
+    oninput: e => {
+      const v = Number(e.target.value);
+      draft.view.span = v >= neckFrets() ? 0 : v;
+      refreshView(build());
+    } });
+  label(spanInput, "Frets shown at a time");
+  const spanRow = h("label", { class: "slide" }, h("span", {}, "Frets shown"), spanInput, spanOut);
+
   /* `inst` is the draft built into an instrument. While it doesn't validate
      (a half-typed tuning), the preview keeps showing the last one that did. */
   function refreshView(inst){
@@ -210,6 +227,13 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
       sl.out.textContent = sl.say(draft.view[sl.key]);
     }
     flip.checked = draft.view.flip;
+    // min and max before value, or the browser clamps the value to the old range.
+    const nf = neckFrets(), part = draft.view.span > 0 && draft.view.span < nf;
+    spanInput.min = String(Math.min(MIN_SPAN, nf));
+    spanInput.max = String(nf);
+    spanInput.disabled = nf <= MIN_SPAN;
+    spanInput.value = String(part ? draft.view.span : nf);
+    spanOut.textContent = part ? `${draft.view.span} at a time` : `all ${nf}`;
     if (!lastGood) return;
     const shown = { ...lastGood, view: { ...draft.view } };
     preview.show(shown);
@@ -220,7 +244,7 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
     const small = smallestCell(L);
     warn.textContent = small < SMALL_TARGET
       ? `Some frets will be ${Math.round(small)}px across on your board: small to tap. ` +
-        `Less tilt or angle makes them bigger.`
+        `Less tilt or angle, or fewer frets shown, makes them bigger.`
       : "";
   }
 
@@ -241,6 +265,7 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
       presetPick,
       previewBox,
       h("label", { class: "check" }, flip, "Low string on top"),
+      spanRow,
       ...sliders.map(sl => sl.row),
       effects,
       warn),
