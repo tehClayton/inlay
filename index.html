@@ -99,8 +99,26 @@
   /* The practice surface. The prompt reads at a glance above the well the
      fretboard will sit in. */
   .stage{flex:1 1 auto;display:flex;flex-direction:column;gap:4px;min-height:0}
-  .prompt{flex:0 0 auto;min-height:30px;display:flex;align-items:center;
+  .strip{flex:0 0 auto;display:flex;align-items:center;gap:var(--sp2);min-height:36px}
+  .prompt{flex:1 1 auto;min-width:0;display:flex;align-items:center;
     justify-content:center;font-size:17px;color:var(--ink-dim);text-align:center}
+  .drillbtn{display:flex;align-items:center;gap:6px;padding:6px 10px;font-size:12px;
+    flex:0 0 auto;max-width:34%}
+  .drillbtn b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .drillbtn svg{width:9px;height:9px;fill:currentColor;opacity:.6;flex:0 0 auto}
+  .score{flex:0 0 auto;font-family:var(--fig);font-size:12px;color:var(--ink-dim);
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .score:empty{display:none}
+  .runbtn{flex:0 0 auto;min-width:72px;padding:8px 14px;font-weight:600}
+  .runbtn.stop{color:var(--miss);border-color:rgba(194,86,107,.5)}
+  /* The drill panel opens from the strip above the board, not the app bar. */
+  .settings.drillpanel{bottom:auto;top:calc(max(var(--sp2),env(safe-area-inset-top)) + 84px)}
+
+  /* Name the note: twelve answers in one row, big enough for a thumb. */
+  .answers{flex:0 0 auto;display:grid;grid-template-columns:repeat(12,1fr);gap:4px}
+  .answers .ans{padding:10px 0;font-size:14px;font-weight:600;min-width:0}
+  .answers .ans.right{background:var(--true);border-color:var(--true);color:#0C1710}
+  .answers .ans.wrong{background:var(--miss);border-color:var(--miss);color:#fff}
   .board{flex:1 1 auto;min-height:140px;position:relative;background:var(--panel);
     border-radius:var(--r2);overflow:hidden;display:flex;align-items:center;
     justify-content:center;
@@ -319,8 +337,20 @@
 </svg>
 
 <main class="stage">
-  <div class="prompt" id="prompt" aria-live="polite"></div>
+  <!-- Everything about the drill in one row, right above the board: which
+       drill, what it's asking, how it's going, and Start/Stop. -->
+  <div class="strip">
+    <button id="drillBtn" class="drillbtn" type="button" aria-expanded="false" aria-controls="drillPanel">
+      <b id="drillName"></b>
+      <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 3l4 4 4-4z"/></svg>
+    </button>
+    <div class="prompt" id="prompt" aria-live="polite"></div>
+    <output class="score" id="score" aria-live="off"></output>
+    <button id="runBtn" class="runbtn go" type="button">Start</button>
+  </div>
   <div class="board" id="board"></div>
+  <!-- Name the note: one button per note, shown only while that drill runs. -->
+  <div class="answers" id="answers" hidden></div>
 </main>
 
 <!-- What you're playing, the app, and its settings: at the bottom, out of the
@@ -364,6 +394,9 @@
 
 <div class="settings" id="editPanel" role="dialog" aria-modal="true" tabindex="-1" hidden></div>
 
+<div class="settings drillpanel" id="drillPanel" role="dialog" aria-modal="true"
+     aria-label="Drill" tabindex="-1" hidden></div>
+
 <div class="settings" id="settings" role="dialog" aria-modal="true"
      aria-label="Settings" tabindex="-1" hidden>
   <div class="sect">
@@ -406,6 +439,7 @@ import { noteName, pitchName } from "./theory.js";
 import { renderEditor } from "./editor.js";
 import { createFretboard, createNeckBar } from "./fretboard.js";
 import { lastFrom } from "./instrument.js";
+import { createPractice } from "./practice.js";
 
 let settings = loadSettings();
 let instruments = loadInstruments();
@@ -433,7 +467,7 @@ function panelButton(btn, panel, render){
 }
 
 /* ---------------------------------------------------------------- board */
-let board = null, bar = null;
+let board = null, bar = null, practice = null;
 let from = 0;             // the first fret in view, when the board shows part of the neck
 
 /* ---------------------------------------------------------- frets shown */
@@ -481,14 +515,20 @@ function renderNeckCtl(inst){
   $("spanMore").disabled = at >= steps.length - 1;
   $("neckbar").hidden = !partial(inst);
   if (partial(inst)){
-    if (!bar) bar = createNeckBar($("neckbar"), { onMove: f => { from = f; board.moveTo(f); } });
+    if (!bar) bar = createNeckBar($("neckbar"), { onMove: f => {
+      from = f;
+      board.moveTo(f);
+      practice.rangeChanged();       // a run asks from wherever the window is now
+    }});
     bar.show(inst, from);
   }
 }
 
-/* Until the drills arrive, tapping a position names it. It is also the
-   quickest way to check an instrument is set up the way it is held. */
-function tapped(pos){
+/* Between runs, tapping a position names it. It is also the quickest way to
+   check an instrument is set up the way it is held. During a run, taps are
+   answers. */
+function tapped(pos, e){
+  if (practice.running){ practice.tap(pos, e); return; }
   const inst = current();
   const midi = pitchAt(inst, pos.string, pos.fret);
   if (midi === null) return;
@@ -503,15 +543,19 @@ function renderBoard(){
   const inst = current();
   $("instName").textContent = inst ? inst.name : "No instrument";
   label($("instBtn"), inst ? `Instrument: ${inst.name}. Switch or edit` : "Set up an instrument");
-  $("prompt").replaceChildren();
+  if (!practice.running) $("prompt").replaceChildren();
   if (inst) from = Math.min(from, lastFrom(inst));   // frets may have been edited down
   renderNeckCtl(inst);
   if (inst){
     $("board").classList.add("live");
     if (!board) board = createFretboard($("board"), { onTap: tapped });
     board.show(inst, { from });
-    $("prompt").replaceChildren(h("i", {}, `${summary(inst, settings.notePref)} — tap a fret to name it`));
+    // A run carries on with a prompt from whatever changed; otherwise, the
+    // idle line.
+    if (practice.running) practice.rangeChanged();
+    else $("prompt").replaceChildren(h("i", {}, `${summary(inst, settings.notePref)} — tap a fret to name it`));
   } else {
+    practice.stop();
     if (board){ board.destroy(); board = null; }
     $("board").classList.remove("live");
     $("board").replaceChildren(h("div", { class: "boardinfo" },
@@ -522,7 +566,10 @@ function renderBoard(){
 
 /* ----------------------------------------------------------- instruments */
 function use(inst){
-  if (settings.instrument !== inst.id) from = 0;   // a different neck starts at the nut
+  if (settings.instrument !== inst.id){
+    from = 0;                        // a different neck starts at the nut
+    practice.instrumentChanged();    // and its strings aren't these strings
+  }
   settings.instrument = inst.id;
   saveSettings({ instrument: inst.id });
   renderBoard();
@@ -595,6 +642,25 @@ function renderSettings(){
 
 label($("gear"), "Settings");
 panelButton($("gear"), $("settings"), renderSettings);
+
+/* ------------------------------------------------------------- practice */
+/* The board is created when there's an instrument to draw, so the loop is
+   handed a stand-in that reaches whichever board exists. */
+practice = createPractice({
+  board: {
+    clearMarks: () => board && board.clearMarks(),
+    mark: (...a) => board && board.mark(...a),
+  },
+  getInst: current,
+  getFrom: () => from,
+  getSettings: () => settings,
+  saveSettings: patch => {
+    Object.assign(settings, patch);
+    if (!saveSettings(patch)) say(STORAGE_FAILED);
+  },
+  // Stopped: the strip goes back to naming what you tap.
+  onChange: running => { if (!running) renderBoard(); },
+});
 
 renderBoard();
 /* First visit: straight into setting up an instrument, since there is
