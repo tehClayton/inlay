@@ -19,6 +19,8 @@
    the chain run backwards into the flat layout, where finding a cell is a
    rectangle test. The view's settings are described in instrument.js. */
 
+import { fretRange, lastFrom, VIEW_PRESETS } from "./instrument.js";
+
 /* Real frets shrink by 2^(-1/12) each, halving by the 12th. Drawn to scale,
    a 24-fret neck on a phone leaves the high frets too narrow to hit, and
    drawn evenly it stops looking like a neck. Half the real taper keeps both:
@@ -102,26 +104,37 @@ export function camera({ tilt, turn, perspective, bassSign }, height, halfLength
 
 /* Everything the renderer draws and the hit test reads, in CSS pixels of a
    width x height box. Shapes come out already transformed: polygons as point
-   lists, lines as endpoint pairs, inlays as (possibly turned) ellipses. */
-export function layout(inst, { width, height }){
+   lists, lines as endpoint pairs, inlays as (possibly turned) ellipses.
+
+   Only the frets in view are laid out (see fretRange), spread across the
+   whole width; `from` is the first of them. When the window starts past the
+   nut there is no nut or open column, just the fret wire at its edge. */
+export function layout(inst, { width, height }, from = 0){
   const v = inst.view;
   const n = inst.strings.length;
+  const [first, last] = fretRange(inst, from);
+  const openShown = first === 0;
   const top = PAD_TOP;
   const bottom = Math.max(top + n * 8, height - NUMBERS_H - 4);
   const H = bottom - top;
   const pitch = H / n;                          // vertical space per string
   const mid = (top + bottom) / 2;
 
-  // Flat x: wire[f] is the right-hand edge of fret f; wire[0] is the nut.
-  const weights = [];
-  for (let f = 1; f <= inst.frets; f++) weights.push(TAPER ** (f - 1));
-  const total = OPEN_WEIGHT + weights.reduce((a, b) => a + b, 0);
+  /* Flat x: wire[f] is the right-hand edge of fret f, for the frets in view;
+     wire[0] is the nut. Each fret keeps its own width from the whole neck's
+     taper, so a window high up the neck still narrows as it goes. */
+  const fretted = [];
+  for (let f = Math.max(first, 1); f <= last; f++) fretted.push(f);
+  const total = (openShown ? OPEN_WEIGHT : 0) + fretted.reduce((a, f) => a + TAPER ** (f - 1), 0);
   const unit = (width - 2 * PAD_X) / total;
-  const wire = [PAD_X + OPEN_WEIGHT * unit];
-  for (const w of weights) wire.push(wire.at(-1) + w * unit);
-  const left = f => (f === 0 ? PAD_X : wire[f - 1]);
+  const wire = [];
+  let x = PAD_X;
+  if (openShown){ x += OPEN_WEIGHT * unit; wire[0] = x; }
+  for (const f of fretted){ x += TAPER ** (f - 1) * unit; wire[f] = x; }
+  const left = f => (f === first ? PAD_X : wire[f - 1]);
   const centre = f => (left(f) + wire[f]) / 2;
-  const X0 = PAD_X, X1 = wire[inst.frets];
+  const X0 = PAD_X, X1 = wire[last];
+  const neckStart = openShown ? wire[0] : PAD_X;   // where the wood begins
   const midX = (X0 + X1) / 2;
 
   // 1. Orientation. Canonical has the bass edge at the top; self-inverse.
@@ -156,7 +169,7 @@ export function layout(inst, { width, height }){
 
   /* Fret numbers are placed in level space, just below whatever is drawn
      lowest at that fret, so they turn with the neck but stay upright. */
-  const numbered = [...INLAY_SINGLE, ...INLAY_DOUBLE].filter(f => f <= inst.frets).sort((a, b) => a - b);
+  const numbered = [...INLAY_SINGLE, ...INLAY_DOUBLE].filter(f => f >= first && f <= last).sort((a, b) => a - b);
   const numberAt = numbered.map(f => {
     const ys = [level([centre(f), top])[1], level([centre(f), bottom])[1]];
     if (hasEdge) ys.push(sidePoint(centre(f), depth)[1]);
@@ -167,7 +180,7 @@ export function layout(inst, { width, height }){
   //    so nothing is distorted: the neck is shrunk and centred.
   const outline = [
     ...[[X0, top], [X1, top], [X1, bottom], [X0, bottom]].map(level),
-    ...(hasEdge ? [sidePoint(wire[0], depth), sidePoint(X1, depth)] : []),
+    ...(hasEdge ? [sidePoint(neckStart, depth), sidePoint(X1, depth)] : []),
     ...numberAt.flatMap(([x, y]) => [[x - 8, y - 10], [x + 8, y + 3]]),
   ].map(turn);
   const xs = outline.map(p => p[0]), ys = outline.map(p => p[1]);
@@ -190,23 +203,27 @@ export function layout(inst, { width, height }){
   const quad = (x0, y0, x1, y1) => [T([x0, y0]), T([x1, y0]), T([x1, y1]), T([x0, y1])];
   const seg = (x0, y0, x1, y1) => [T([x0, y0]), T([x1, y1])];
 
+  /* A string starts at its own nut: the main nut, or a banjo's fifth-string
+     spike at fret `start`. If that's before the window, the string runs in
+     from the window's edge; if it's past the window, it isn't in view. */
   const strings = inst.strings.map((s, i) => {
     const y = top + (i + 0.5) * pitch;
-    // A string starts at its own nut: the main nut, or a banjo's fifth-string
-    // spike at fret `start`.
-    const x0 = s.start === 0 ? wire[0] : wire[s.start];
-    return { index: i, line: seg(x0, y, X1, y), open: s.open,
-             spike: s.start ? T([wire[s.start], y]) : null, y: T([X1, y])[1] };
+    const inView = s.start <= last;
+    const x0 = s.start >= first ? wire[s.start] : PAD_X;
+    return { index: i, open: s.open,
+             line: inView ? seg(x0, y, X1, y) : null,
+             spike: s.start && s.start >= first && inView ? T([wire[s.start], y]) : null,
+             y: T([X1, y])[1] };
   });
 
-  /* One cell per playable position. Fret `start` is a string's open position,
-     drawn in the space just before its nut, like the open column. `flat` is
-     the untransformed rectangle the hit test checks. */
+  /* One cell per playable position in view. Fret `start` is a string's open
+     position, drawn in the space just before its nut, like the open column.
+     `flat` is the untransformed rectangle the hit test checks. */
   const cells = [];
   inst.strings.forEach((s, i) => {
     const y0 = top + i * pitch, y1 = y0 + pitch, cy = y0 + pitch / 2;
-    for (let f = s.start; f <= inst.frets; f++){
-      const x0 = left(f), x1 = f === 0 ? wire[0] : wire[f], cx = (x0 + x1) / 2;
+    for (let f = Math.max(s.start, first); f <= last; f++){
+      const x0 = left(f), x1 = wire[f], cx = (x0 + x1) / 2;
       const pts = quad(x0, y0, x1, y1);
       const [ccx, ccy] = T([cx, cy]);
       const w = dist(T([x0, cy]), T([x1, cy])), hgt = dist(T([cx, y0]), T([cx, y1]));
@@ -232,8 +249,9 @@ export function layout(inst, { width, height }){
   const ellipse = (x, y, r) => ellipseAt((dx, dy) => T([x + dx, y + dy]), r);
   const dotR = Math.min(pitch * 0.2, 7);
   const inlays = [];
-  for (const f of INLAY_SINGLE) if (f <= inst.frets) inlays.push({ fret: f, ...ellipse(centre(f), mid, dotR) });
-  for (const f of INLAY_DOUBLE) if (f <= inst.frets){
+  const shown = f => f >= first && f <= last;
+  for (const f of INLAY_SINGLE) if (shown(f)) inlays.push({ fret: f, ...ellipse(centre(f), mid, dotR) });
+  for (const f of INLAY_DOUBLE) if (shown(f)){
     // In the gaps either side of the middle, where they sit on a real neck:
     // between strings 2–3 and 4–5 on a guitar. With an odd count the middle
     // is a string, so step out to the next gaps. Too few strings to have
@@ -245,7 +263,7 @@ export function layout(inst, { width, height }){
 
   const onScreen = p => fromLevel(p);
   const edge = hasEdge
-    ? [sidePoint(wire[0], 0), sidePoint(X1, 0), sidePoint(X1, depth), sidePoint(wire[0], depth)].map(onScreen)
+    ? [sidePoint(neckStart, 0), sidePoint(X1, 0), sidePoint(X1, depth), sidePoint(neckStart, depth)].map(onScreen)
     : null;
   // Side dots sit halfway down the side, drawn in the side's own plane.
   const sideDots = hasEdge
@@ -253,12 +271,18 @@ export function layout(inst, { width, height }){
                                   Math.min(1.9, depth * 0.3)))
     : [];
 
+  // The wire at the window's left edge, when it starts past the nut, then
+  // the right edge of every fret in view.
+  const wires = [...(openShown ? [] : [PAD_X]), ...fretted.map(f => wire[f])]
+    .map(x => seg(x, top, x, bottom));
+  const nut = openShown ? seg(wire[0], top, wire[0], bottom) : null;
+
   return {
-    width, height, top, bottom, pitch, view: v,
-    wood: quad(wire[0], top, X1, bottom),
-    openCol: quad(X0, top, wire[0], bottom),
-    nut: seg(wire[0], top, wire[0], bottom),
-    wires: wire.slice(1).map(x => seg(x, top, x, bottom)),
+    width, height, top, bottom, pitch, view: v, range: [first, last],
+    wood: quad(neckStart, top, X1, bottom),
+    openCol: openShown ? quad(X0, top, wire[0], bottom) : null,
+    nut, wires,
+    ends: [nut ?? wires[0], wires.at(-1)],   // the neck's two ends in view
     strings, cells, inlays, edge, sideDots,
     numbers: numbered.map((f, i) => {
       const [x, y] = fromLevel(numberAt[i]);
@@ -304,13 +328,14 @@ export function readout(L){
   const gap = (i, j) => (at(i) && at(j) ? dist([at(i).cx, at(i).cy], [at(j).cx, at(j).cy]) : null);
   const near = gap(0, 1), far = gap(n - 2, n - 1);
 
+  const [headEnd, bodyEnd] = L.ends;
   const midOf = ([[ax, ay], [bx, by]]) => [(ax + bx) / 2, (ay + by) / 2];
-  const [nx, ny] = midOf(L.nut), [bx, by] = midOf(L.wires.at(-1));
+  const [nx, ny] = midOf(headEnd), [bx, by] = midOf(bodyEnd);
   const al = Math.hypot(bx - nx, by - ny), ux = (bx - nx) / al, uy = (by - ny) / al;
   const across = ([[ax, ay], [cx, cy]]) => Math.abs((cx - ax) * uy - (cy - ay) * ux);
   return {
     gaps: n >= 3 && near && far ? far / near : 1,
-    nut: across(L.nut) / across(L.wires.at(-1)),
+    nut: across(headEnd) / across(bodyEnd),
   };
 }
 
@@ -342,36 +367,37 @@ const gauge = open => Math.max(1, Math.min(3.2, 3.2 - (open - 23) * (2.2 / 41)))
 export function createFretboard(host, { onTap } = {}){
   const svg = el("svg", { class: "fb", role: "img" });
   host.replaceChildren(svg);
-  let inst = null, L = null, marks = [], windowFrets = null;
+  let inst = null, L = null, marks = [], dim = null, from = 0;
 
   function draw(){
     if (!inst) { svg.replaceChildren(); return; }
     const width = host.clientWidth, height = host.clientHeight;
     if (!width || !height) return;
-    L = layout(inst, { width, height });
+    L = layout(inst, { width, height }, from);
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-    svg.setAttribute("aria-label",
-      `Fretboard: ${inst.strings.length} strings, ${inst.frets} frets`);
+    const [a, b] = L.range;
+    svg.setAttribute("aria-label", `Fretboard: ${inst.strings.length} strings, ` +
+      (a === 0 && b === inst.frets ? `${inst.frets} frets` : `frets ${a || "open"} to ${b} of ${inst.frets}`));
 
     const g = [];
-    g.push(el("polygon", { class: "fb-open", points: points(L.openCol) }));
+    if (L.openCol) g.push(el("polygon", { class: "fb-open", points: points(L.openCol) }));
     if (L.edge) g.push(el("polygon", { class: "fb-edge", points: points(L.edge) }));
     g.push(el("polygon", { class: "fb-wood", points: points(L.wood) }));
     for (const d of L.sideDots) g.push(oval("fb-side", d));
     for (const d of L.inlays) g.push(oval("fb-inlay", d));
     for (const w of L.wires) g.push(line("fb-fret", w));
-    g.push(line("fb-nut", L.nut));
+    if (L.nut) g.push(line("fb-nut", L.nut));
     for (const s of L.strings){
       if (s.spike) g.push(el("circle", { class: "fb-spike", cx: s.spike[0], cy: s.spike[1], r: 3 }));
-      g.push(line("fb-string", s.line, { "stroke-width": gauge(s.open) }));
+      if (s.line) g.push(line("fb-string", s.line, { "stroke-width": gauge(s.open) }));
     }
     for (const nb of L.numbers) g.push(el("text", { class: "fb-num", x: nb.cx, y: nb.y }, String(nb.fret)));
 
     // Everything outside the drill's fret window is dimmed, not hidden: the
     // neck stays whole, so where the window sits on it is itself information.
-    if (windowFrets){
-      const [a, b] = windowFrets;
-      for (const c of L.cells) if (c.fret < a || c.fret > b){
+    if (dim){
+      const [lo, hi] = dim;
+      for (const c of L.cells) if (c.fret < lo || c.fret > hi){
         g.push(el("polygon", { class: "fb-dim", points: points(c.pts) }));
       }
     }
@@ -404,14 +430,113 @@ export function createFretboard(host, { onTap } = {}){
   ro.observe(host);
 
   return {
-    /* The instrument to draw, and optionally a [from, to] fret window. */
-    show(next, { window: w = null } = {}){ inst = next; windowFrets = w; marks = []; draw(); },
+    /* The instrument to draw; `from` is the first fret in view when it shows
+       fewer than all of them, and `dim` an optional [lo, hi] of frets to
+       leave bright, dimming the rest. */
+    show(next, { from: f = 0, dim: d = null } = {}){ inst = next; from = f; dim = d; marks = []; draw(); },
+    /* Moves the window along the neck, keeping the marks. */
+    moveTo(f){ from = f; draw(); },
     /* A marker on a position: kind is a class ("note", "true", "miss",
        "target"), text an optional label inside it. */
     mark(pos, kind, text){ marks.push({ pos, kind, text }); draw(); },
     clearMarks(){ marks = []; draw(); },
     /* The current layout, for whoever needs its measurements. */
     get layout(){ return L; },
+    destroy(){ ro.disconnect(); svg.remove(); },
+  };
+}
+
+/* ------------------------------------------------------------- neck bar */
+
+/* The whole neck in miniature, with the part the board is showing picked
+   out, as a slider: drag or tap it to move along the neck, or use the arrow
+   keys. Drawn flat and in the instrument's handedness, so it reads as a map
+   of the neck you're holding whatever view the board uses. `onMove(from)`
+   reports the new first fret in view. */
+export function createNeckBar(host, { onMove } = {}){
+  const svg = el("svg", { class: "nb", role: "slider", tabindex: "0",
+                          "aria-orientation": "horizontal" });
+  host.replaceChildren(svg);
+  let inst = null, from = 0, L = null, dragging = false;
+
+  function draw(){
+    const width = host.clientWidth, height = host.clientHeight;
+    if (!inst || !width || !height) return;
+    /* The whole neck, flat. Only its frets and dots are drawn, so it's laid
+       out with a single string: a real string count would ask for more
+       height than a slim bar has. The box is sized so the neck fills the
+       bar with 2px to spare, the room kept for fret numbers falling outside
+       the viewBox. */
+    const whole = { ...inst, strings: [{ open: 40, start: 0 }], view: { ...VIEW_PRESETS.tab, span: 0 } };
+    L = layout(whole, { width, height: height - 4 + PAD_TOP + NUMBERS_H + 4 });
+    const [a, b] = fretRange(inst, from);
+    const inWindow = L.cells.filter(c => c.fret >= a && c.fret <= b);
+    const xs = inWindow.flatMap(c => [c.x0, c.x1]);
+    const [wx0, wx1] = [Math.min(...xs), Math.max(...xs)];
+    svg.setAttribute("viewBox", `0 ${PAD_TOP - 2} ${width} ${height}`);   // the neck, with its 2px margins
+    const g = [el("polygon", { class: "nb-wood", points: points(L.wood) })];
+    if (L.openCol) g.push(el("polygon", { class: "nb-open", points: points(L.openCol) }));
+    for (const w of L.wires) g.push(line("nb-fret", w));
+    if (L.nut) g.push(line("nb-nut", L.nut));
+    for (const d of L.inlays) g.push(oval("nb-dot", { ...d, rx: 2.2, ry: 2.2 }));
+    g.push(el("rect", { class: "nb-win", x: wx0, y: L.top - 1, width: wx1 - wx0,
+                        height: L.bottom - L.top + 2, rx: 3 }));
+    svg.replaceChildren(...g);
+    svg.setAttribute("aria-valuemin", "0");
+    svg.setAttribute("aria-valuemax", String(lastFrom(inst)));
+    svg.setAttribute("aria-valuenow", String(a));
+    svg.setAttribute("aria-valuetext", a === 0 ? `open strings to fret ${b}` : `frets ${a} to ${b}`);
+    svg.setAttribute("aria-label", "Position on the neck");
+  }
+
+  function set(f){
+    const next = Math.max(0, Math.min(lastFrom(inst), f));
+    if (next === from) return;
+    from = next;
+    draw();
+    if (onMove) onMove(from);
+  }
+
+  /* Centre the window on the fret nearest the pointer. */
+  function toPointer(e){
+    if (!L) return;
+    const x = e.clientX - svg.getBoundingClientRect().left;
+    const nearest = L.cells.reduce((best, c) => (Math.abs(c.cx - x) < Math.abs(best.cx - x) ? c : best));
+    set(nearest.fret - Math.floor(inst.view.span / 2));
+  }
+
+  svg.addEventListener("pointerdown", e => {
+    dragging = true;
+    svg.setPointerCapture(e.pointerId);
+    toPointer(e);
+    e.preventDefault();
+  });
+  svg.addEventListener("pointermove", e => { if (dragging) toPointer(e); });
+  const end = e => {
+    dragging = false;
+    if (svg.hasPointerCapture && svg.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
+  };
+  svg.addEventListener("pointerup", end);
+  svg.addEventListener("pointercancel", end);
+
+  /* Keys follow the neck, not the screen: "up the neck" is towards the body
+     whichever way a left-handed instrument points it. */
+  svg.addEventListener("keydown", e => {
+    if (!inst) return;
+    const toBody = inst.leftHanded ? "ArrowLeft" : "ArrowRight";
+    const toNut  = inst.leftHanded ? "ArrowRight" : "ArrowLeft";
+    const step = { [toBody]: 1, [toNut]: -1, ArrowUp: 1, ArrowDown: -1,
+                   PageUp: inst.view.span, PageDown: -inst.view.span }[e.key];
+    if (step !== undefined){ e.preventDefault(); set(from + step); }
+    else if (e.key === "Home"){ e.preventDefault(); set(0); }
+    else if (e.key === "End"){ e.preventDefault(); set(lastFrom(inst)); }
+  });
+
+  const ro = new ResizeObserver(draw);
+  ro.observe(host);
+
+  return {
+    show(next, f = 0){ inst = next; from = Math.max(0, Math.min(lastFrom(next), f)); draw(); },
     destroy(){ ro.disconnect(); svg.remove(); },
   };
 }

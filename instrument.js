@@ -57,6 +57,25 @@ export const VIEW_RANGES = Object.freeze({
   edge:        [0, 1],
 });
 
+/* How many frets the board shows at once, set alongside the view but not
+   part of any preset: 0 shows the whole neck; otherwise that many fretted
+   positions, which a position slider moves along the neck. At the nut end
+   the open strings come too, as fret 0. */
+export const MIN_SPAN = 3;
+
+/* The frets on screen, [first, last] inclusive, for a window whose first
+   fret is `from` (clamped to the neck). 0 is the open strings. */
+export function fretRange(inst, from = 0){
+  const span = inst.view.span;
+  if (!span || span >= inst.frets) return [0, inst.frets];
+  const first = Math.max(0, Math.min(inst.frets - span + 1, Math.round(from)));
+  return [first, first === 0 ? span : first + span - 1];
+}
+
+/* The furthest the window can move: its first fret at the far end. */
+export const lastFrom = inst =>
+  !inst.view.span || inst.view.span >= inst.frets ? 0 : inst.frets - inst.view.span + 1;
+
 const near = (a, b) => Math.abs(a - b) < 1e-6;
 export const sameView = (a, b) =>
   a.flip === b.flip && Object.keys(VIEW_RANGES).every(k => near(a[k], b[k]));
@@ -72,7 +91,7 @@ export function newInstrument(fields = {}, now = Date.now()){
     strings: DEFAULT_TUNING.map(t => ({ open: parsePitch(t), start: 0 })),
     frets: DEFAULT_FRETS,
     leftHanded: false,
-    view: { ...VIEW_PRESETS.tab },
+    view: { ...VIEW_PRESETS.tab, span: 0 },
     ...fields,
     created: now,
     updated: now,
@@ -108,6 +127,10 @@ export function upgrade(x){
       edge: VIEW_PRESETS.tab.edge,
     }};
   }
+  // Every view before `span` existed showed the whole neck.
+  if (out.view && typeof out.view === "object" && !("span" in out.view)){
+    out = { ...out, view: { ...out.view, span: 0 } };
+  }
   return out;
 }
 
@@ -117,6 +140,9 @@ function viewErrors(v){
   if (typeof v.flip !== "boolean") errs.push("view.flip not true/false");
   for (const [k, [lo, hi]] of Object.entries(VIEW_RANGES)){
     if (!Number.isFinite(v[k]) || v[k] < lo - 1e-9 || v[k] > hi + 1e-9) errs.push(`view.${k} not ${lo}–${hi}`);
+  }
+  if (!(v.span === 0 || (Number.isInteger(v.span) && v.span >= MIN_SPAN && v.span <= MAX_FRETS))){
+    errs.push(`view.span not 0 or ${MIN_SPAN}–${MAX_FRETS}`);
   }
   return errs;
 }

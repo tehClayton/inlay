@@ -54,7 +54,7 @@ test("instruments stored in the old shape load upgraded, not dropped", () => {
   store.setItem(KEYS.instruments, JSON.stringify([{ ...old, tabView: false }]));
   const [loaded] = loadInstruments();
   assert.equal(loaded.name, "Old");
-  assert.deepEqual(loaded.view, VIEW_PRESETS.flipped);
+  assert.deepEqual(loaded.view, { ...VIEW_PRESETS.flipped, span: 0 });
   assert.ok(!("tabView" in loaded));
 });
 

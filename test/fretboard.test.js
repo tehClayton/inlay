@@ -246,6 +246,81 @@ test("however far it turns, the neck's near end stays well in front of the eye",
   }
 });
 
+/* ----------------------------------------------------- frets in view */
+
+const windowed = (span, fields = {}) => {
+  const g = guitar(fields);
+  return { ...g, view: { ...g.view, span } };
+};
+
+test("a window lays out only its frets, spread across the whole width", () => {
+  const W = windowed(5);
+  const L = layout(W, BOX, 7), all = layout(guitar(), BOX);
+  assert.deepEqual(L.range, [7, 11]);
+  assert.deepEqual([...new Set(L.cells.map(c => c.fret))], [7, 8, 9, 10, 11]);
+  assert.equal(L.cells.length, 6 * 5);
+  // Same outer edges as the whole neck: the window fills the board.
+  const xs = M => M.cells.flatMap(c => [c.x0, c.x1]);
+  assert.ok(close(Math.min(...xs(L)), Math.min(...xs(all))));
+  assert.ok(close(Math.max(...xs(L)), Math.max(...xs(all))));
+  // Frets get bigger for being fewer, and keep the neck's taper.
+  const w = f => { const c = cellOf(L, { string: 0, fret: f }); return c.x1 - c.x0; };
+  assert.ok(w(7) > (cellOf(all, { string: 0, fret: 7 }).x1 - cellOf(all, { string: 0, fret: 7 }).x0) * 3);
+  for (let f = 8; f <= 11; f++) assert.ok(w(f) < w(f - 1));
+});
+
+test("past the nut there is no nut or open column, just the fret wire at the edge", () => {
+  const L = layout(windowed(5), BOX, 7);
+  assert.equal(L.nut, null);
+  assert.equal(L.openCol, null);
+  assert.equal(L.wires.length, 5 + 1);                  // the edge, then each fret's own
+  const atNut = layout(windowed(5), BOX, 0);
+  assert.ok(atNut.nut && atNut.openCol);
+  assert.deepEqual(atNut.range, [0, 5]);
+  assert.equal(atNut.wires.length, 5);
+});
+
+test("inlays and fret numbers only for frets in view", () => {
+  const L = layout(windowed(5), BOX, 10);               // frets 10–14
+  assert.deepEqual([...new Set(L.inlays.map(d => d.fret))], [12]);
+  assert.deepEqual(L.numbers.map(n => n.fret), [12]);
+});
+
+for (const [name, fields] of ALL_VIEWS){
+  test(`${name}: every window's cells hit themselves, and stay in the box`, () => {
+    for (const from of [0, 1, 7, 18]){
+      const L = layout(windowed(5, fields), BOX, from);
+      for (const c of L.cells){
+        assert.deepEqual(cellAt(L, c.cx, c.cy), { string: c.string, fret: c.fret }, `from ${from}`);
+        for (const [x, y] of c.pts) assert.ok(x > -1e-6 && x < BOX.width + 1e-6 && y > -1e-6 && y < BOX.height + 1e-6);
+      }
+      assert.ok(Number.isFinite(readout(L).gaps) && Number.isFinite(readout(L).nut));
+    }
+  });
+}
+
+test("a banjo's short string, in and out of the window", () => {
+  const P = parsePitch;
+  const banjo = { ...newInstrument({ frets: 22, strings: [
+    { open: P("G4"), start: 5 }, { open: P("D3"), start: 0 }, { open: P("G3"), start: 0 },
+    { open: P("B3"), start: 0 }, { open: P("D4"), start: 0 },
+  ]}) };
+  banjo.view = { ...banjo.view, span: 4 };
+  // Frets 0–4: the short string hasn't started.
+  let L = layout(banjo, BOX, 0);
+  assert.equal(L.cells.filter(c => c.string === 0).length, 0);
+  assert.equal(L.strings[0].line, null);
+  // Frets 3–6: it starts here, at its spike, with its open position at 5.
+  L = layout(banjo, BOX, 3);
+  assert.deepEqual(L.cells.filter(c => c.string === 0).map(c => c.fret), [5, 6]);
+  assert.ok(L.strings[0].spike);
+  // Frets 8–11: it runs in from the edge like any other string.
+  L = layout(banjo, BOX, 8);
+  assert.equal(L.cells.filter(c => c.string === 0).length, 4);
+  assert.equal(L.strings[0].spike, null);
+  assert.ok(L.strings[0].line);
+});
+
 /* ------------------------------------------------------------ the rest */
 
 test("a banjo's short string has no cells below its nut", () => {
