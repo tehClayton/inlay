@@ -22,34 +22,38 @@ export const MAX_NAME    = 40;
 export const DEFAULT_TUNING = ["E2", "A2", "D3", "G3", "B3", "E4"];
 export const DEFAULT_FRETS  = 22;
 
-/* How the neck is drawn. Described by what you see, not by where an eye
-   would be, so each setting changes one visible thing:
+/* How the neck is drawn: a camera looking at a real neck. Rotations are about
+   the screen's axes, applied to a neck lying level with its bass edge
+   nearest you:
 
-     flip       false: the bass edge (the face-side string, a guitar's low E)
-                at the bottom, as in tab. true: at the top.
-     squeeze    string spacing across the neck closes up away from the bass
-                edge, as seen by an eye above that edge. The far edge's
-                spacing as a fraction of the near edge's; 1 is none.
-     recession  the headstock end drawn smaller, as if receding. Its height
-                as a fraction of the body end's; 1 is none.
-     angle      the neck turned on screen, headstock end up, in degrees.
-     edge       the side of the fretboard along the bass edge, with its side
-                dots, as a fraction of one string gap; 0 is hidden.
+     flip         false: the bass edge (the face-side string, a guitar's low
+                  E) at the bottom, as in tab. true: at the top.
+     tilt         about x, degrees: the face tips away, bass edge towards you.
+                  Strings flatten and close up away from you, the far long
+                  edge shortens, and the side of the fretboard comes into view.
+     turn         about y, degrees: the headstock end swings away.
+     angle        about z, degrees: the neck turned on screen, headstock up.
+     perspective  how close the eye is, 0–1: 0 is none (parallel lines stay
+                  parallel), 1 is close enough that the far side is clearly
+                  smaller. Tilt and turn only look like depth with some.
+     edge         how deep the fretboard's side is, 0–1 of a string gap. Tilt
+                  is what shows it; with no tilt it is edge-on and unseen.
 
    Presets are named starting points. Any other combination is "custom". */
 export const VIEW_PRESETS = Object.freeze({
-  tab:     Object.freeze({ flip: false, squeeze: 1,   recession: 1, angle: 0, edge: 0 }),
-  flipped: Object.freeze({ flip: true,  squeeze: 1,   recession: 1, angle: 0, edge: 0 }),
-  player:  Object.freeze({ flip: false, squeeze: 0.7, recession: 1, angle: 0, edge: 0.2 }),
+  tab:     Object.freeze({ flip: false, tilt: 0,  turn: 0, angle: 0, perspective: 0,    edge: 0.4 }),
+  flipped: Object.freeze({ flip: true,  tilt: 0,  turn: 0, angle: 0, perspective: 0,    edge: 0.4 }),
+  player:  Object.freeze({ flip: false, tilt: 35, turn: 0, angle: 0, perspective: 0.75, edge: 0.4 }),
 });
 
 /* Past these, frets get too small to tap on a phone or the neck stops
    reading as a neck. */
 export const VIEW_RANGES = Object.freeze({
-  squeeze:   [0.5, 1],
-  recession: [0.6, 1],
-  angle:     [0, 30],
-  edge:      [0, 1],
+  tilt:        [0, 50],
+  turn:        [0, 40],
+  angle:       [0, 30],
+  perspective: [0, 1],
+  edge:        [0, 1],
 });
 
 const near = (a, b) => Math.abs(a - b) < 1e-6;
@@ -75,9 +79,12 @@ export function newInstrument(fields = {}, now = Date.now()){
 }
 
 /* Brings an older stored shape up to date; anything else passes through for
-   validate() to judge. Two earlier shapes:
-     tabView: true|false  — true put the bass edge at the bottom, as tab does
-     view: "tab" | "flipped" | "player"  — the presets, by name */
+   validate() to judge. Earlier shapes, oldest first:
+     tabView: true|false   true put the bass edge at the bottom, as tab does
+     view: "tab" | "flipped" | "player"   the presets, by name
+     view: { flip, squeeze, recession, angle, edge }   effect settings, which
+       have no exact camera equivalent: squeeze becomes the player preset's
+       tilt and perspective, recession a turn, and angle carries over. */
 export function upgrade(x){
   if (!x || typeof x !== "object") return x;
   let out = x;
@@ -87,6 +94,18 @@ export function upgrade(x){
   }
   if (typeof out.view === "string" && out.view in VIEW_PRESETS){
     out = { ...out, view: { ...VIEW_PRESETS[out.view] } };
+  }
+  const v = out.view;
+  if (v && typeof v === "object" && "squeeze" in v && !("tilt" in v)){
+    const squeezed = v.squeeze < 1, receded = v.recession < 1;
+    out = { ...out, view: {
+      flip: v.flip,
+      tilt: squeezed ? VIEW_PRESETS.player.tilt : 0,
+      turn: receded ? 25 : 0,
+      angle: v.angle,
+      perspective: squeezed || receded ? VIEW_PRESETS.player.perspective : 0,
+      edge: VIEW_PRESETS.tab.edge,
+    }};
   }
   return out;
 }

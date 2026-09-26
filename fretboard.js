@@ -8,11 +8,11 @@
    steps, each undoable:
 
      1. orientation  the bass edge to the bottom, unless the view is flipped
-     2. squeeze      string spacing closes up away from the bass edge
-     3. recession    the headstock end drawn smaller
-     4. angle        the neck turned on screen, headstock end up
-     5. fit          scaled down, only if the result spills out of the box
-     6. handedness   mirrored left to right for a left-handed instrument
+     2. camera       the flat neck as a real one: tilted about x, turned about
+                     y, and seen in perspective
+     3. angle        turned on screen, about z, headstock end up
+     4. fit          scaled down, only if the result spills out of the box
+     5. handedness   mirrored left to right for a left-handed instrument
 
    So there is one set of fret arithmetic, every step keeps straight lines
    straight (frets and strings are still drawn as lines), and hit-testing is
@@ -36,54 +36,49 @@ const PAD_TOP = 8;
 const NUMBERS_H = 16;      // the strip of fret numbers under the neck
 const FIT_MARGIN = 2;
 
-/* ------------------------------------------------------------ projection */
-
-/* Squeeze: a one-dimensional perspective on [0, 1], 0 nearest the eye:
-   t(v) = (1+c)v / (1+cv). It fixes both ends, and its slope falls from
-   (1+c) at the near end to 1/(1+c) at the far end, so the far/near spacing
-   ratio is 1/(1+c)². What is evenly spaced on the fretboard stays in order
-   on screen and simply closes up with distance. */
-export const squeezeC = squeeze => 1 / Math.sqrt(squeeze) - 1;
-export const recede = (v, c) => (1 + c) * v / (1 + c * v);
-export const unrecede = (t, c) => t / (1 + c - c * t);
-
-/* How much tighter the farthest string gap looks than the nearest: on a
-   guitar, B to high E against low E to A. What the squeeze slider reports. */
-export function gapRatio(squeeze, strings){
-  if (strings < 3) return 1;
-  const c = squeezeC(squeeze), at = i => recede((i + 0.5) / strings, c);
-  return (at(strings - 1) - at(strings - 2)) / (at(1) - at(0));
-}
-
-/* Recession: the projective map taking the unit square onto a quadrilateral,
-   corners in order (0,0) (1,0) (1,1) (0,1) — Heckbert's closed form. */
-export function squareToQuad([[x0, y0], [x1, y1], [x2, y2], [x3, y3]]){
-  const sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
-  if (Math.abs(sx) < 1e-12 && Math.abs(sy) < 1e-12){
-    return [x1 - x0, x2 - x1, x0, y1 - y0, y2 - y1, y0, 0, 0];
-  }
-  const dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2;
-  const den = dx1 * dy2 - dx2 * dy1;
-  const g = (sx * dy2 - dx2 * sy) / den, h = (dx1 * sy - sx * dy1) / den;
-  return [x1 - x0 + g * x1, x3 - x0 + h * x3, x0, y1 - y0 + g * y1, y3 - y0 + h * y3, y0, g, h];
-}
-
-export function applyH([a, b, c, d, e, f, g, h], u, v){
-  const w = g * u + h * v + 1;
-  return [(a * u + b * v + c) / w, (d * u + e * v + f) / w];
-}
-
-/* The inverse map, from the adjugate of the 3x3 matrix, normalised so its
-   last entry is 1 like the forward map's. */
-export function invertH([a, b, c, d, e, f, g, h]){
-  const A = e - f * h, B = c * h - b, C = b * f - c * e;
-  const D = f * g - d, E = a - c * g, F = c * d - a * f;
-  const G = d * h - e * g, Hh = b * g - a * h, I = a * e - b * d;
-  return [A / I, B / I, C / I, D / I, E / I, F / I, G / I, Hh / I];
-}
+/* Perspective 1 puts the eye this many board-heights away divided into one:
+   at full strength the eye is 2.5 board-heights from the neck's centre. */
+const PERSPECTIVE_K = 0.4;
 
 const dist = ([ax, ay], [bx, by]) => Math.hypot(bx - ax, by - ay);
 const identity = p => p;
+const rad = d => d * Math.PI / 180;
+
+/* ---------------------------------------------------------------- camera */
+
+/* The camera for a view, working in coordinates centred on the neck with y
+   pointing to the bass edge. `height` is the neck's flat height, which sets
+   the eye's distance. `project` takes a point on or off the fretboard's face
+   (z > 0 towards the eye) to the screen; `unproject` takes a screen point
+   back to the face (z = 0), where it has a unique answer. */
+export function camera({ tilt, turn, perspective, bassSign }, height){
+  const a = rad(tilt) * bassSign;               // the bass edge comes towards you
+  const b = rad(turn);
+  const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
+  const q = perspective * PERSPECTIVE_K / height;  // 1 / eye distance; 0 is none
+
+  function project([x, y, z]){
+    // Tilt about x: the face tips, y towards or away from the eye.
+    const y1 = y * ca - z * sa, z1 = y * sa + z * ca;
+    // Turn about y: the headstock end (x < 0) swings away from the eye.
+    const x2 = x * cb - z1 * sb, z2 = x * sb + z1 * cb;
+    // Perspective: nearer is bigger. At z = 0 the scale is exactly 1.
+    const w = 1 - q * z2;
+    return [x2 / w, y1 / w];
+  }
+
+  /* For a point on the face, project() is x·(cb + q·sx·sb) + y·(q·sx·sa·cb −
+     sa·sb) = sx and x·(q·sy·sb) + y·(ca + q·sy·sa·cb) = sy: linear in x and
+     y once the screen point is known, so two equations, two unknowns. */
+  function unproject([sx, sy]){
+    const a11 = cb + q * sx * sb,  a12 = q * sx * sa * cb - sa * sb;
+    const a21 = q * sy * sb,       a22 = ca + q * sy * sa * cb;
+    const det = a11 * a22 - a12 * a21;
+    return [(sx * a22 - a12 * sy) / det, (a11 * sy - a21 * sx) / det];
+  }
+
+  return { project, unproject };
+}
 
 /* ---------------------------------------------------------------- layout */
 
@@ -109,54 +104,52 @@ export function layout(inst, { width, height }){
   const left = f => (f === 0 ? PAD_X : wire[f - 1]);
   const centre = f => (left(f) + wire[f]) / 2;
   const X0 = PAD_X, X1 = wire[inst.frets];
-
-  // The edge strip lies beyond the bass string, flat y from edgeY to top.
-  const edgeY = top - v.edge * pitch;
+  const midX = (X0 + X1) / 2;
 
   // 1. Orientation. Canonical has the bass edge at the top; self-inverse.
   const orient = ([x, y]) => [x, v.flip ? y : top + bottom - y];
+  const bassSign = v.flip ? -1 : 1;             // which way is the bass edge, on screen
+  const bassY = v.flip ? top : bottom;
 
-  // 2. Squeeze, measured from the bass edge wherever orientation put it.
-  const c = squeezeC(v.squeeze);
-  const bassY = v.flip ? top : bottom, away = v.flip ? 1 : -1;
-  const squeeze   = ([x, y]) => [x, bassY + away * H * recede(away * (y - bassY) / H, c)];
-  const unsqueeze = ([x, y]) => [x, bassY + away * H * unrecede(away * (y - bassY) / H, c)];
+  // 2. Camera, centred on the neck.
+  const cam = camera({ ...v, bassSign }, H);
+  const view3 = ([x, y], z = 0) => {
+    const [px, py] = cam.project([x - midX, y - mid, z]);
+    return [px + midX, py + mid];
+  };
+  const level = p => view3(orient(p));
+  const unlevel = ([x, y]) => {
+    const [fx, fy] = cam.unproject([x - midX, y - mid]);
+    return orient([fx + midX, fy + mid]);
+  };
 
-  // 3. Recession: the neck onto a trapezoid, the nut at `recession` of the
-  //    body end's height. Anchored on the nut, not the open column's edge,
-  //    so the setting means what it says; the open column carries on the
-  //    same taper just beyond it.
-  let recess = identity, unrecess = identity;
-  if (v.recession < 1){
-    const N = wire[0], half = H / 2;
-    const M = squareToQuad([[N, mid - v.recession * half], [X1, top], [X1, bottom],
-                            [N, mid + v.recession * half]]);
-    const Mi = invertH(M);
-    recess = ([x, y]) => applyH(M, (x - N) / (X1 - N), (y - top) / H);
-    unrecess = ([x, y]) => { const [u, w] = applyH(Mi, x, y); return [N + u * (X1 - N), top + w * H]; };
-  }
-  const level = p => recess(squeeze(orient(p)));           // flat -> level screen space
-  const unlevel = p => orient(unsqueeze(unrecess(p)));
-
-  // 4. Angle, about the box centre. Positive turns the body end down, which
+  // 3. Angle, about the box centre. Positive turns the body end down, which
   //    brings the headstock end up, as the neck lies in your lap.
-  const th = v.angle * Math.PI / 180, cos = Math.cos(th), sin = Math.sin(th);
+  const th = rad(v.angle), cos = Math.cos(th), sin = Math.sin(th);
   const ox = width / 2, oy = height / 2;
   const turn   = ([x, y]) => [ox + (x - ox) * cos - (y - oy) * sin, oy + (x - ox) * sin + (y - oy) * cos];
   const unturn = ([x, y]) => [ox + (x - ox) * cos + (y - oy) * sin, oy - (x - ox) * sin + (y - oy) * cos];
+
+  /* The side of the fretboard along the bass edge: the face's edge, and the
+     same edge `depth` behind the face. Tilt is what brings it into view. */
+  const depth = v.edge * pitch;
+  const sidePoint = (x, d) => view3([x, bassY], -d);
+  const hasEdge = depth > 0 && v.tilt > 0;
 
   /* Fret numbers are placed in level space, just below whatever is drawn
      lowest at that fret, so they turn with the neck but stay upright. */
   const numbered = [...INLAY_SINGLE, ...INLAY_DOUBLE].filter(f => f <= inst.frets).sort((a, b) => a - b);
   const numberAt = numbered.map(f => {
-    const ys = [top, bottom, edgeY].map(y => level([centre(f), y])[1]);
+    const ys = [level([centre(f), top])[1], level([centre(f), bottom])[1]];
+    if (hasEdge) ys.push(sidePoint(centre(f), depth)[1]);
     return [level([centre(f), mid])[0], Math.max(...ys) + 12];
   });
 
-  // 5. Fit. Only when steps 1–4 spill out of the box, and then uniformly,
+  // 4. Fit. Only when steps 1–3 spill out of the box, and then uniformly,
   //    so nothing is distorted: the neck is shrunk and centred.
   const outline = [
-    ...[[X0, top], [X1, top], [X1, bottom], [X0, bottom], [X0, edgeY], [X1, edgeY]].map(level),
+    ...[[X0, top], [X1, top], [X1, bottom], [X0, bottom]].map(level),
+    ...(hasEdge ? [sidePoint(wire[0], depth), sidePoint(X1, depth)] : []),
     ...numberAt.flatMap(([x, y]) => [[x - 8, y - 10], [x + 8, y + 3]]),
   ].map(turn);
   const xs = outline.map(p => p[0]), ys = outline.map(p => p[1]);
@@ -169,7 +162,7 @@ export function layout(inst, { width, height }){
     unfit = ([x, y]) => [bcx + (x - ox) / k, bcy + (y - oy) / k];
   }
 
-  // 6. Handedness; self-inverse.
+  // 5. Handedness; self-inverse.
   const mirror = ([x, y]) => [inst.leftHanded ? width - x : x, y];
 
   const fromLevel = p => mirror(fit(turn(p)));
@@ -212,12 +205,13 @@ export function layout(inst, { width, height }){
 
   /* A flat circle of radius r at (x, y), as the view draws it: an ellipse
      stretched by the local scale along and across the neck, turned with it. */
-  const ellipse = (x, y, r) => {
-    const [cx, cy] = T([x, y]);
-    const a0 = T([x - 1, y]), a1 = T([x + 1, y]);
-    return { cx, cy, rx: r * dist(a0, a1) / 2, ry: r * dist(T([x, y - 1]), T([x, y + 1])) / 2,
+  const ellipseAt = (at, r) => {
+    const [cx, cy] = at(0, 0);
+    const a0 = at(-1, 0), a1 = at(1, 0);
+    return { cx, cy, rx: r * dist(a0, a1) / 2, ry: r * dist(at(0, -1), at(0, 1)) / 2,
              rot: Math.atan2(a1[1] - a0[1], a1[0] - a0[0]) * 180 / Math.PI };
   };
+  const ellipse = (x, y, r) => ellipseAt((dx, dy) => T([x + dx, y + dy]), r);
   const dotR = Math.min(pitch * 0.2, 7);
   const inlays = [];
   for (const f of INLAY_SINGLE) if (f <= inst.frets) inlays.push({ fret: f, ...ellipse(centre(f), mid, dotR) });
@@ -231,10 +225,14 @@ export function layout(inst, { width, height }){
                 { fret: f, ...ellipse(centre(f), mid + off, dotR) });
   }
 
-  const hasEdge = v.edge > 0;
-  const edge = hasEdge ? quad(wire[0], edgeY, X1, top) : null;
+  const onScreen = p => fromLevel(p);
+  const edge = hasEdge
+    ? [sidePoint(wire[0], 0), sidePoint(X1, 0), sidePoint(X1, depth), sidePoint(wire[0], depth)].map(onScreen)
+    : null;
+  // Side dots sit halfway down the side, drawn in the side's own plane.
   const sideDots = hasEdge
-    ? numbered.map(f => ellipse(centre(f), (edgeY + top) / 2, Math.min(1.9, (top - edgeY) * 0.3)))
+    ? numbered.map(f => ellipseAt((dx, dy) => onScreen(sidePoint(centre(f) + dx, depth / 2 + dy)),
+                                  Math.min(1.9, depth * 0.3)))
     : [];
 
   return {
@@ -269,6 +267,34 @@ export const cellOf = (L, pos) =>
 /* The smallest target on the neck, in pixels: what the editor warns about
    when a view makes frets too small to tap. */
 export const smallestCell = L => Math.min(...L.cells.map(c => c.size));
+
+/* What the view does to the picture, measured from the drawing rather than
+   worked out from the settings, so it is true whatever combination made it:
+
+     gaps  the farthest string gap as a fraction of the nearest, at the fret
+           nearest the middle of the neck (B–E against E–A on a guitar)
+     nut   how tall the nut end looks against the body end, measured across
+           the neck (perpendicular to its length), so a tilt's keystone
+           slant doesn't read as the headstock receding
+
+   Both are 1 when the view does nothing to them. */
+export function readout(L){
+  const n = L.strings.length;
+  const frets = [...new Set(L.cells.map(c => c.fret))];
+  const f = frets[Math.floor(frets.length / 2)];
+  const at = i => cellOf(L, { string: i, fret: f });
+  const gap = (i, j) => (at(i) && at(j) ? dist([at(i).cx, at(i).cy], [at(j).cx, at(j).cy]) : null);
+  const near = gap(0, 1), far = gap(n - 2, n - 1);
+
+  const midOf = ([[ax, ay], [bx, by]]) => [(ax + bx) / 2, (ay + by) / 2];
+  const [nx, ny] = midOf(L.nut), [bx, by] = midOf(L.wires.at(-1));
+  const al = Math.hypot(bx - nx, by - ny), ux = (bx - nx) / al, uy = (by - ny) / al;
+  const across = ([[ax, ay], [cx, cy]]) => Math.abs((cx - ax) * uy - (cy - ay) * ux);
+  return {
+    gaps: n >= 3 && near && far ? far / near : 1,
+    nut: across(L.nut) / across(L.wires.at(-1)),
+  };
+}
 
 /* ---------------------------------------------------------------- drawing */
 

@@ -63,12 +63,12 @@ test("a banjo's short fifth string starts at fret 5", () => {
 test("validate names each problem", () => {
   const g = newInstrument();
   const bad = { ...g, name: " ", frets: 0, strings: [{ open: 200, start: 0 }],
-                view: { ...g.view, squeeze: 0.1, flip: "no" } };
+                view: { ...g.view, tilt: 80, flip: "no" } };
   const errs = validate(bad);
   assert.ok(errs.includes("name missing"));
   assert.ok(errs.includes("frets not 1–36"));
   assert.ok(errs.includes("string 1: pitch not 0–127"));
-  assert.ok(errs.includes("view.squeeze not 0.5–1"));
+  assert.ok(errs.includes("view.tilt not 0–50"));
   assert.ok(errs.includes("view.flip not true/false"));
   assert.ok(validate({ ...g, view: "tab" }).includes("view missing"));
 });
@@ -107,6 +107,14 @@ test("older view shapes upgrade to the preset values", () => {
   for (const name of Object.keys(VIEW_PRESETS)){
     assert.deepEqual(upgrade({ ...old, view: name }), { ...old, view: VIEW_PRESETS[name] });
   }
+  // The effect-slider shape: squeeze becomes the player's tilt and perspective,
+  // recession a turn, and the angle carries over.
+  const effects = upgrade({ ...old, view: { flip: true, squeeze: 0.7, recession: 0.8, angle: 12, edge: 0.2 } });
+  assert.deepEqual(validate(effects), []);
+  assert.deepEqual(effects.view, { flip: true, tilt: VIEW_PRESETS.player.tilt, turn: 25, angle: 12,
+    perspective: VIEW_PRESETS.player.perspective, edge: VIEW_PRESETS.tab.edge });
+  const plain = upgrade({ ...old, view: { flip: false, squeeze: 1, recession: 1, angle: 0, edge: 0 } });
+  assert.deepEqual(plain.view, VIEW_PRESETS.tab);
   const current = newInstrument({ view: { ...VIEW_PRESETS.player, angle: 20 } });
   assert.equal(upgrade(current), current);                 // already current: untouched
   assert.equal(upgrade({ ...old, view: "sideways" }).view, "sideways");   // left for validate

@@ -10,7 +10,7 @@ import {
   validate, stringNumber, VIEW_PRESETS, VIEW_RANGES, presetOf,
   MAX_STRINGS, MAX_FRETS, MAX_NAME,
 } from "./instrument.js";
-import { createFretboard, layout, gapRatio, smallestCell } from "./fretboard.js";
+import { createFretboard, layout, readout, smallestCell } from "./fretboard.js";
 
 const int = v => (/^\d+$/.test(String(v).trim()) ? Number(v) : NaN);
 
@@ -132,62 +132,57 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
     text);
 
   /* ------------------------------------------------------------- view */
-  /* Presets are starting points; the sliders adjust from any of them, and
-     each slider says what it does in the words you'd use to describe the
-     picture ("B–E at 80% of E–A"). A live preview draws the draft instrument
-     through the draft view. */
+  /* Presets are starting points; the sliders adjust from any of them. The
+     sliders are the camera (tilt, turn, angle, perspective, edge depth), and
+     underneath them a line says what that does to the picture in the words
+     you'd describe it by ("B–E at 81% of E–A"), measured from the drawing. A
+     live preview draws the draft instrument through the draft view. */
   const PRESET_TEXT = {
     tab:     ["Tab", "low string at the bottom"],
     flipped: ["Flipped", "low string on top"],
-    player:  ["Player's view", "looking down across the strings"],
+    player:  ["Player's view", "tilted, as you look down at it"],
   };
   const presetPick = h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "viewLabel" });
   const previewBox = h("div", { class: "fbprev", "aria-hidden": "true" });
   const preview = createFretboard(previewBox);
   root._preview = preview;
+  const effects = h("p", { class: "effects" });
   const warn = h("p", { class: "err" });
   let lastGood = null;
 
-  /* Squeeze and recession are stored as what remains (1 = none), but a
-     slider should get stronger to the right, so theirs run on strength. */
-  const strength = k => ({
-    to:   s => { const [lo] = VIEW_RANGES[k]; return 1 - s * (1 - lo); },
-    from: v => { const [lo] = VIEW_RANGES[k]; return (1 - v) / (1 - lo); },
-  });
+  const deg = v => (v ? `${Math.round(v)}°` : "none");
   const SLIDERS = [
-    { key: "squeeze",   name: "String squeeze", ...strength("squeeze"),   step: 0.01 },
-    { key: "recession", name: "Headstock recession", ...strength("recession"), step: 0.01 },
-    { key: "angle",     name: "Angle", to: s => s, from: v => v, step: 1,
-      min: VIEW_RANGES.angle[0], max: VIEW_RANGES.angle[1] },
-    { key: "edge",      name: "Edge", to: s => s, from: v => v, step: 0.05,
-      min: VIEW_RANGES.edge[0], max: VIEW_RANGES.edge[1] },
+    { key: "tilt",        name: "Tilt",        axis: "x", step: 1,    say: deg },
+    { key: "turn",        name: "Turn",        axis: "y", step: 1,    say: deg },
+    { key: "angle",       name: "Angle",       axis: "z", step: 1,    say: v => (v ? `${Math.round(v)}°` : "level") },
+    { key: "perspective", name: "Perspective", axis: "",  step: 0.05, say: v => (v ? `${Math.round(v * 100)}%` : "none") },
+    { key: "edge",        name: "Edge depth",  axis: "",  step: 0.05, say: v => (v ? `${Math.round(v * 100)}% of a string gap` : "none") },
   ];
 
-  /* What each setting does to the picture, in the terms we describe it by. */
-  function reading(key, inst){
-    const v = draft.view;
-    if (key === "squeeze"){
-      if (v.squeeze >= 1) return "none";
-      const s = inst ? inst.strings : null, n = s ? s.length : draft.strings.length;
-      const pct = Math.round(gapRatio(v.squeeze, n) * 100);
-      if (!s || n < 3) return `far gap ${pct}% of near`;
-      const nm = i => noteName(s[i].open, notePref);
-      return `${nm(n - 2)}–${nm(n - 1)} at ${pct}% of ${nm(0)}–${nm(1)}`;
-    }
-    if (key === "recession") return v.recession >= 1 ? "none" : `nut end at ${Math.round(v.recession * 100)}%`;
-    if (key === "angle") return v.angle ? `${Math.round(v.angle)}°` : "level";
-    return v.edge ? `${Math.round(v.edge * 100)}% of a string gap` : "hidden";
-  }
-
   const sliders = SLIDERS.map(sl => {
+    const [min, max] = VIEW_RANGES[sl.key];
     const out = h("output", { class: "val" });
     const input = h("input", {
-      type: "range", min: sl.min ?? 0, max: sl.max ?? 1, step: sl.step,
-      oninput: e => { draft.view[sl.key] = sl.to(Number(e.target.value)); refreshView(build()); },
+      type: "range", min, max, step: sl.step,
+      oninput: e => { draft.view[sl.key] = Number(e.target.value); refreshView(build()); },
     });
-    label(input, sl.name);
-    return { ...sl, input, out, row: h("label", { class: "slide" }, h("span", {}, sl.name), input, out) };
+    label(input, sl.axis ? `${sl.name}, about the ${sl.axis} axis` : sl.name);
+    return { ...sl, input, out, row: h("label", { class: "slide" },
+      h("span", {}, sl.name, sl.axis ? h("i", { class: "axis" }, ` ${sl.axis}`) : null), input, out) };
   });
+
+  /* What the view does to the picture, in the terms we describe it by. */
+  function describe(inst, L){
+    const { gaps, nut } = readout(L);
+    const parts = [];
+    const n = inst.strings.length;
+    if (n >= 3 && Math.abs(gaps - 1) > 0.005){
+      const nm = i => noteName(inst.strings[i].open, notePref);
+      parts.push(`${nm(n - 2)}–${nm(n - 1)} at ${Math.round(gaps * 100)}% of ${nm(0)}–${nm(1)}`);
+    }
+    if (Math.abs(nut - 1) > 0.005) parts.push(`nut end at ${Math.round(nut * 100)}%`);
+    return parts.length ? parts.join(" · ") : "flat: no foreshortening";
+  }
 
   const flip = h("input", { type: "checkbox",
     onchange: e => { draft.view.flip = e.target.checked; refreshView(build()); } });
@@ -208,18 +203,21 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
       which ? null : h("span", { class: "chip two sel custom", "aria-current": "true" },
         h("b", {}, "Custom"), h("i", {}, "adjusted below")));
     for (const sl of sliders){
-      sl.input.value = String(sl.from(draft.view[sl.key]));
-      sl.out.textContent = reading(sl.key, lastGood);
+      sl.input.value = String(draft.view[sl.key]);
+      sl.out.textContent = sl.say(draft.view[sl.key]);
     }
     flip.checked = draft.view.flip;
     if (!lastGood) return;
     const shown = { ...lastGood, view: { ...draft.view } };
     preview.show(shown);
-    const small = boardSize && boardSize.width
-      ? smallestCell(layout(shown, boardSize)) : Infinity;
+    // Measured on the real board's size when known: that's what you'll tap.
+    const size = boardSize && boardSize.width ? boardSize : { width: 720, height: 240 };
+    const L = layout(shown, size);
+    effects.textContent = describe(shown, L);
+    const small = smallestCell(L);
     warn.textContent = small < SMALL_TARGET
       ? `Some frets will be ${Math.round(small)}px across on your board: small to tap. ` +
-        `Less angle or squeeze makes them bigger.`
+        `Less tilt or angle makes them bigger.`
       : "";
   }
 
@@ -241,6 +239,7 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
       previewBox,
       h("label", { class: "check" }, flip, "Low string on top"),
       ...sliders.map(sl => sl.row),
+      effects,
       warn),
     h("div", { class: "sect actions" },
       err,
