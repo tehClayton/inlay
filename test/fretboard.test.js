@@ -5,11 +5,11 @@ import { newInstrument, VIEW_PRESETS, VIEW_RANGES } from "../instrument.js";
 import { parsePitch } from "../theory.js";
 
 const BOX = { width: 800, height: 240 };
-/* A guitar; `view` may be a preset's name, or an object of settings laid
-   over the tab preset. */
-const viewOf = v => (typeof v === "string" ? { ...VIEW_PRESETS[v] } : { ...VIEW_PRESETS.tab, ...v });
-const guitar = (fields = {}) =>
-  newInstrument({ ...fields, ...(fields.view ? { view: viewOf(fields.view) } : {}) });
+/* A guitar, flat (tab) unless asked otherwise, whatever new instruments
+   default to: most of these tests are about geometry. `view` may be a
+   preset's name, or an object of settings laid over the tab preset. */
+const viewOf = v => ({ ...(typeof v === "string" ? VIEW_PRESETS[v] : { ...VIEW_PRESETS.tab, ...v }), span: 0 });
+const guitar = (fields = {}) => newInstrument({ ...fields, view: viewOf(fields.view ?? "tab") });
 const close = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 const len = ([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 
@@ -72,7 +72,7 @@ test("frets narrow up the neck, the 12th about 70% of the 1st", () => {
 const below = (L, a, b) => cellOf(L, a).cy > cellOf(L, b).cy;
 const LOW = { string: 0, fret: 5 }, HIGH = { string: 5, fret: 5 };   // guitar: low E, high E
 
-test("tab, the default: nut on the left, low string at the bottom", () => {
+test("tab: nut on the left, low string at the bottom", () => {
   const L = layout(guitar(), BOX);
   assert.ok(cellOf(L, { string: 0, fret: 0 }).cx < cellOf(L, { string: 0, fret: 22 }).cx);
   assert.ok(below(L, LOW, HIGH));
@@ -134,7 +134,8 @@ test("tilt without perspective only flattens: strings stay evenly spaced", () =>
 });
 
 test("tilt with perspective: strings close up away from the eye, and the far edge shortens", () => {
-  const L = layout(guitar({ view: "player" }), BOX);
+  // Tilt alone, no turn or angle, so each effect can be checked on its own.
+  const L = layout(guitar({ view: { tilt: 35, perspective: 0.75 } }), BOX);
   const y = i => L.strings[i].y;   // guitar: 0 is low E, nearest; 5 is high E, farthest
   const gaps = [1, 2, 3, 4, 5].map(i => y(i - 1) - y(i));
   for (let i = 1; i < gaps.length; i++) assert.ok(gaps[i] < gaps[i - 1], `gap ${i} not tighter`);
@@ -147,6 +148,17 @@ test("tilt with perspective: strings close up away from the eye, and the far edg
   assert.ok(far < near * 0.97, "the far long edge should be visibly shorter");
   // No turn: both ends of the neck are the same height.
   assert.ok(close(readout(L).nut, 1, 1e-9));
+});
+
+/* Tuned by eye with 6 frets shown on a landscape board, where it read "B–E
+   at 71% of E–A · nut end at 92%". Both readings shift a little with the
+   board's shape and the window, so this checks the neighbourhood. */
+test("the player's view preset reads as tuned", () => {
+  const g = guitar({ view: "player" });
+  const L = layout({ ...g, view: { ...g.view, span: 6 } }, { width: 800, height: 240 });
+  const { gaps, nut } = readout(L);
+  assert.ok(Math.abs(gaps - 0.71) < 0.03, `B–e / E–A = ${gaps.toFixed(3)}`);
+  assert.ok(Math.abs(nut - 0.92) < 0.03, `nut end at ${nut.toFixed(3)}`);
 });
 
 test("turn with perspective: the headstock end recedes", () => {

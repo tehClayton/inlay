@@ -43,7 +43,8 @@ export const DEFAULT_FRETS  = 22;
 export const VIEW_PRESETS = Object.freeze({
   tab:     Object.freeze({ flip: false, tilt: 0,  turn: 0, angle: 0, perspective: 0,    edge: 0.4 }),
   flipped: Object.freeze({ flip: true,  tilt: 0,  turn: 0, angle: 0, perspective: 0,    edge: 0.4 }),
-  player:  Object.freeze({ flip: false, tilt: 35, turn: 0, angle: 0, perspective: 0.75, edge: 0.4 }),
+  // Tuned by eye on a real board: B–E at about 71% of E–A, nut end at 92%.
+  player:  Object.freeze({ flip: false, tilt: 54, turn: 6, angle: 5, perspective: 0.8,  edge: 0.5 }),
 });
 
 /* Tilt and turn stop short of 90°, where the fretboard would be edge-on with
@@ -91,7 +92,7 @@ export function newInstrument(fields = {}, now = Date.now()){
     strings: DEFAULT_TUNING.map(t => ({ open: parsePitch(t), start: 0 })),
     frets: DEFAULT_FRETS,
     leftHanded: false,
-    view: { ...VIEW_PRESETS.tab, span: 0 },
+    view: { ...VIEW_PRESETS.player, span: 0 },
     ...fields,
     created: now,
     updated: now,

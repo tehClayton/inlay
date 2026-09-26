@@ -73,12 +73,12 @@ test("validate names each problem", () => {
   assert.ok(validate({ ...g, view: "tab" }).includes("view missing"));
 });
 
-test("new instruments default to the tab preset, showing the whole neck", () => {
+test("new instruments default to the player's view, showing the whole neck", () => {
   const g = newInstrument();
-  assert.deepEqual(g.view, { ...VIEW_PRESETS.tab, span: 0 });
-  assert.equal(presetOf(g.view), "tab");
-  g.view.angle = 5;                                  // a copy, not the frozen preset
-  assert.equal(VIEW_PRESETS.tab.angle, 0);
+  assert.deepEqual(g.view, { ...VIEW_PRESETS.player, span: 0 });
+  assert.equal(presetOf(g.view), "player");
+  g.view.angle = 20;                                 // a copy, not the frozen preset
+  assert.equal(VIEW_PRESETS.player.angle, 5);
 });
 
 test("every preset is a valid view, and anything else is custom", () => {
@@ -87,7 +87,7 @@ test("every preset is a valid view, and anything else is custom", () => {
     assert.equal(presetOf(v), name);
   }
   assert.equal(presetOf({ ...VIEW_PRESETS.player, angle: 12 }), null);
-  assert.ok(sameView(VIEW_PRESETS.player, { ...VIEW_PRESETS.player, perspective: 0.75 + 1e-9 }));
+  assert.ok(sameView(VIEW_PRESETS.player, { ...VIEW_PRESETS.player, perspective: 0.8 + 1e-9 }));
   // How many frets are shown is not part of what a preset is.
   assert.equal(presetOf({ ...VIEW_PRESETS.player, span: 5 }), "player");
 });
