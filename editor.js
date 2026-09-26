@@ -192,7 +192,8 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
   function refreshView(inst){
     if (inst && validate(inst).length === 0) lastGood = inst;
     const which = presetOf(draft.view);
-    presetPick.replaceChildren(
+    // Filtered, because replaceChildren prints a null as the text "null".
+    presetPick.replaceChildren(...[
       ...Object.keys(VIEW_PRESETS).map(p => {
         const on = which === p;
         return h("button", {
@@ -202,7 +203,8 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
         }, h("b", {}, PRESET_TEXT[p][0]), h("i", {}, PRESET_TEXT[p][1]));
       }),
       which ? null : h("span", { class: "chip two sel custom", "aria-current": "true" },
-        h("b", {}, "Custom"), h("i", {}, "adjusted below")));
+        h("b", {}, "Custom"), h("i", {}, "adjusted below")),
+    ].filter(Boolean));
     for (const sl of sliders){
       sl.input.value = String(draft.view[sl.key]);
       sl.out.textContent = sl.say(draft.view[sl.key]);
