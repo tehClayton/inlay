@@ -92,7 +92,7 @@ practice on one never shows up in another's heatmap.
 | `strings` | One entry per string, in physical order from the string nearest the player's face to the one nearest the floor. Each is `{ open, start }`: `open` is the open pitch as a MIDI number, and `start` is the first playable fret (normally 0; 5 for a banjo's short fifth string) |
 | `frets` | Highest fret, 1–36 |
 | `leftHanded` | Mirrors the neck so the nut is on the right |
-| `tabView` | Off: the string nearest the player's face is drawn at the top, as seen looking down at the neck. On: flipped, with the floor-side string at the top, as in tab. Named for physical position rather than pitch, because on re-entrant tunings the face-side string isn't the lowest |
+| `view` | How the neck is drawn. `tab` (the default): the face-side string, a guitar's low E, at the bottom, as in tab. `flipped`: the face-side string at the top. `player`: tab's orientation in perspective, as the player sees the neck looking down at it, with the headstock end receding and the near edge's side dots showing. Named by physical side rather than pitch, because on re-entrant tunings the face-side string isn't the lowest |
 | `created`, `updated` | Timestamps, used to resolve conflicts on import |
 
 - **Physical order, not pitch order.** Re-entrant tunings like a ukulele's high G,

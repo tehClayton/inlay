@@ -6,7 +6,7 @@
    list of presets to maintain. Each field says immediately whether it reads. */
 import { h, label } from "./ui.js";
 import { parsePitch, pitchName } from "./theory.js";
-import { validate, stringNumber, MAX_STRINGS, MAX_FRETS, MAX_NAME } from "./instrument.js";
+import { validate, stringNumber, VIEWS, MAX_STRINGS, MAX_FRETS, MAX_NAME } from "./instrument.js";
 
 const int = v => (/^\d+$/.test(String(v).trim()) ? Number(v) : NaN);
 
@@ -18,7 +18,7 @@ export function renderEditor(root, { inst, isNew, notePref, onSave, onCancel, on
     strings: inst.strings.map(s => ({ text: pitchName(s.open, notePref), start: String(s.start) })),
     frets: String(inst.frets),
     leftHanded: inst.leftHanded,
-    tabView: inst.tabView,
+    view: inst.view,
   };
 
   const title = h("h2", { id: "editTitle" }, isNew ? "New instrument" : "Edit instrument");
@@ -86,7 +86,7 @@ export function renderEditor(root, { inst, isNew, notePref, onSave, onCancel, on
       strings: draft.strings.map(s => ({ open: parsePitch(s.text), start: int(s.start) })),
       frets: int(draft.frets),
       leftHanded: draft.leftHanded,
-      tabView: draft.tabView,
+      view: draft.view,
     };
   }
 
@@ -121,6 +121,25 @@ export function renderEditor(root, { inst, isNew, notePref, onSave, onCancel, on
                  onchange: e => { draft[key] = e.target.checked; } }),
     text);
 
+  /* One of three, so radio chips rather than a checkbox. Labelled by what you
+     see, since "tab" and "flipped" mean little until you've seen both. */
+  const VIEW_TEXT = {
+    tab:     ["Tab", "low string at the bottom"],
+    flipped: ["Flipped", "low string on top"],
+    player:  ["Player's view", "looking down at the neck"],
+  };
+  const viewPick = h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "viewLabel" });
+  function drawViews(){
+    viewPick.replaceChildren(...VIEWS.map(v => {
+      const on = draft.view === v;
+      return h("button", {
+        class: "chip two" + (on ? " sel" : ""), role: "radio", "aria-checked": String(on),
+        onclick: () => { draft.view = v; drawViews(); },
+      }, h("b", {}, VIEW_TEXT[v][0]), h("i", {}, VIEW_TEXT[v][1]));
+    }));
+  }
+  drawViews();
+
   label(name, "Instrument name");
   label(frets, `Number of frets, 1 to ${MAX_FRETS}`);
 
@@ -132,8 +151,10 @@ export function renderEditor(root, { inst, isNew, notePref, onSave, onCancel, on
       h("div", { class: "pick" }, addTop, addEnd)),
     h("div", { class: "sect" },
       h("label", { class: "inline" }, "Frets", frets),
-      checkbox("leftHanded", "Left-handed: nut on the right"),
-      checkbox("tabView", "Tab view: floor-side string at the top")),
+      checkbox("leftHanded", "Left-handed: nut on the right")),
+    h("div", { class: "sect" },
+      h("h2", { id: "viewLabel" }, "View"),
+      viewPick),
     h("div", { class: "sect actions" },
       err,
       h("div", { class: "btns" },

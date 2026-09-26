@@ -41,6 +41,7 @@
     --nut:#CFC8B8;
     --string:#A9B3BD;
     --pearl:#E2DCCD;
+    --edge:#4A3E36;
 
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp5:24px;
     --r1:6px; --r2:10px; --r3:14px;
@@ -169,6 +170,10 @@
   .chip{padding:8px 12px;font-size:12px;line-height:1}
   .chip.sel{background:var(--true);border-color:var(--true);color:#0C1710;
     box-shadow:0 0 18px -7px var(--true)}
+  /* A chip that names a choice and says what it means underneath. */
+  .chip.two{display:grid;gap:4px;text-align:left;padding:9px 12px}
+  .chip.two b{font-weight:600}
+  .chip.two i{font-style:normal;font-size:10px;opacity:.75}
 
   /* Text fields sit recessed, like the wells: they hold something you read
      back. Selectable, unlike the rest of the page. */
@@ -218,6 +223,10 @@
   .fb-spike{fill:var(--nut)}
   .fb-string{stroke:var(--string);stroke-linecap:round}
   .fb-inlay{fill:var(--pearl);opacity:.85}
+  /* The player's view: the fretboard's near edge, lighter as the binding in
+     the light, with its side dots. */
+  .fb-edge{fill:var(--edge)}
+  .fb-side{fill:var(--pearl)}
   .fb-num{fill:var(--ink-mute);font-family:var(--fig);font-size:10px;text-anchor:middle}
   .fb-dim{fill:var(--ground);opacity:.62}
   .fb-mark circle{stroke-width:2}
