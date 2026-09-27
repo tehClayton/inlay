@@ -240,6 +240,9 @@
   .actions .btns{display:flex;align-items:center;gap:var(--sp2)}
   .grow{flex:1}
   .err{font-size:12px;line-height:1.5;color:var(--miss)}
+  /* The editor's question before retuning an instrument with history. */
+  .ask{display:grid;gap:var(--sp2);padding:10px 12px;border-radius:var(--r1);
+    background:rgba(255,255,255,.03);border-left:3px solid #E8A33D}   /* millitap's amber: take care */
   .err:empty{display:none}
 
   .instrows{display:grid;gap:2px}
@@ -433,7 +436,9 @@ import {
 } from "./ui.js";
 import {
   loadInstruments, saveInstrument, deleteInstrument, loadSettings, saveSettings,
+  saveSession, sessionsFor,
 } from "./store.js";
+import { summarize, MIN_ANSWERS } from "./sessions.js";
 import { newInstrument, summary, pitchAt, stringNumber } from "./instrument.js";
 import { noteName, pitchName } from "./theory.js";
 import { renderEditor } from "./editor.js";
@@ -594,22 +599,32 @@ $("instNew").onclick = e => edit(null, e.currentTarget);
 function edit(inst, opener){
   const isNew = !inst;
   const done = () => closePanel($("editPanel"));
+  const history = inst ? sessionsFor(inst.id).length : 0;
   renderEditor($("editPanel"), {
     inst: inst ?? newInstrument(),
     isNew,
+    history,
     notePref: settings.notePref,
     boardSize: { width: $("board").clientWidth, height: $("board").clientHeight },
     onCancel: done,
-    onSave: saved => {
+    /* `asNew`: the strings changed on an instrument with history, and you
+       chose to keep the old one as it was and save this as another. */
+    onSave: (saved, { asNew = false } = {}) => {
+      if (asNew){
+        const now = Date.now();
+        saved = { ...saved, id: crypto.randomUUID(), created: now, updated: now };
+      }
       if (!saveInstrument(saved)){ say(STORAGE_FAILED); return; }
       instruments = loadInstruments();
-      if (isNew) use(saved); else renderBoard();
+      if (isNew || asNew) use(saved); else renderBoard();
       if (isOpen($("instPanel"))) renderInstruments();
       done();
-      say(isNew ? `Added ${saved.name}` : `Saved ${saved.name}`);
+      say(isNew || asNew ? `Added ${saved.name}` : `Saved ${saved.name}`);
     },
     onDelete: gone => {
-      if (!confirm(`Delete "${gone.name}"? This can't be undone.`)) return;
+      const n = sessionsFor(gone.id).length;
+      const also = n ? ` Its practice history (${n} session${n === 1 ? "" : "s"}) goes with it.` : "";
+      if (!confirm(`Delete "${gone.name}"?${also} This can't be undone.`)) return;
       if (!deleteInstrument(gone.id)){ say(STORAGE_FAILED); return; }
       instruments = loadInstruments();
       if (settings.instrument === gone.id && instruments[0]) use(instruments[0]);
@@ -661,7 +676,31 @@ practice = createPractice({
   },
   // Stopped: the strip goes back to naming what you tap.
   onChange: running => { if (!running) renderBoard(); },
+  onSession: keep,
 });
+
+/* A run handed over to be kept: on Stop (done), or quietly when the page is
+   hidden mid-run. Short runs aren't kept; a full store makes room by
+   dropping the oldest sessions, and says so. */
+function keep(recorder, done){
+  if (recorder.answers < MIN_ANSWERS){
+    if (done) say(`Not saved: a run needs ${MIN_ANSWERS} answers to be kept.`);
+    return;
+  }
+  const record = recorder.record();
+  const { ok, pruned } = saveSession(record);
+  if (!ok){
+    if (done) say("Couldn't save this run: storage is full or blocked.", 4000);
+    return;
+  }
+  if (pruned) say(`Storage was full, so the ${pruned} oldest sessions were removed. ` +
+                  `Export a backup to keep your history.`, 6000);
+  else if (done){
+    const s = summarize(record);
+    const time = s.typicalMs ? ` · ${(s.typicalMs / 1000).toFixed(1)}s` : "";
+    say(`Saved: ${s.answers} answers · ${Math.round(s.accuracy * 100)}%${time}`);
+  }
+}
 
 renderBoard();
 /* First visit: straight into setting up an instrument, since there is

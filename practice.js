@@ -17,17 +17,31 @@ import {
 } from "./drills.js";
 import { fretRange, stringNumber, pitchAt } from "./instrument.js";
 import { noteName } from "./theory.js";
+import { createRecorder } from "./sessions.js";
 
 const NEXT_MS = 400;         // after a right answer, before the next prompt
 
 /* `board` is the fretboard; `getInst` and `getFrom` say what's on it;
    `getSettings`/`saveSettings` hold the drill choice; `onChange` is told when
-   a run starts or stops, so the page can put its idle state back. */
-export function createPractice({ board, getInst, getFrom, getSettings, saveSettings, onChange }){
+   a run starts or stops, so the page can put its idle state back;
+   `onSession(recorder, done)` is handed the run's session to save — when it
+   stops (done), and along the way when the page is hidden, in case it isn't
+   coming back. */
+export function createPractice({ board, getInst, getFrom, getSettings, saveSettings, onChange, onSession }){
   let running = false, state = "idle";   // idle | asking | between | reveal
   let prompt = null, cands = [], score = createScore(), t0 = 0, timer = 0;
   let found = [], misses = [], revealed = false, chosen = null;   // chosen: an answer button pressed
   let strings = null;                     // the strings filter, null for all; not stored
+  let recorder = null;                    // this run's session
+
+  /* A session covers one drill with one set of filters, so changing either
+     mid-run hands over the session so far and starts another. */
+  function newSession(){
+    recorder = createRecorder({ inst: getInst(), drill: kind(), notes: getSettings().drillNotes, strings });
+  }
+  function handOver(done){
+    if (recorder && recorder.answers && onSession) onSession(recorder, done);
+  }
 
   const kind = () => getSettings().drill;
   const pref = () => getSettings().notePref;
@@ -147,6 +161,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
         found.push(pos);
         misses = [];
         score.add(true, ms);
+        recorder.add(pos, true, ms);
         t0 = e.timeStamp;                  // each find timed from the last
         if (found.length === prompt.targets.length){
           state = "between";
@@ -156,20 +171,27 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
       } else {
         // A miss counts, and shows, but doesn't end the prompt.
         score.add(false, ms);
+        recorder.add(pos, false, ms);
         misses = [pos];
         render();
       }
       return;
     }
+    /* A miss is kept against the fret you tapped: that's the one whose note
+       you got wrong. */
+    recorder.add(pos, ok, ms);
     if (ok){ found = [pos]; right(ms); }
     else { misses = [pos]; wrong(ms); }
   }
 
+  /* Naming: right or wrong, it's about the marked fret. */
   function answerNote(pc, e){
     if (!running || state !== "asking") return;
     chosen = pc;
-    if (isRight(prompt, pc)) right(since(e));
-    else wrong(since(e));
+    const ms = since(e), ok = isRight(prompt, pc);
+    recorder.add(prompt.pos, ok, ms);
+    if (ok) right(ms);
+    else wrong(ms);
   }
 
   /* After a wrong answer, any tap moves on — except Stop, which stops. The
@@ -190,6 +212,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     if (!getInst()) return;
     running = true;
     score = createScore();
+    newSession();
     prompt = null;
     next();
     if (running && onChange) onChange(true);
@@ -198,6 +221,8 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
   function stop(){
     clearTimeout(timer);
     const was = running;
+    if (was) handOver(true);
+    recorder = null;
     running = false; state = "idle"; prompt = null;
     found = []; misses = []; revealed = false; chosen = null;
     render();
@@ -205,6 +230,12 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
   }
 
   $("runBtn").onclick = () => (running ? stop() : start());
+
+  /* Hidden — switched away, locked, or closing — may be the last chance to
+     keep the run. It carries on if you come back, and saves over this. */
+  addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && running) handOver(false);
+  });
 
   /* --------------------------------------------------------- the panel */
 
@@ -256,8 +287,15 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     renderStrip();
   }
 
-  /* Filters or drill changed: a run in progress starts a fresh prompt. */
-  function changed(){ if (running) { prompt = null; next(); } else renderStrip(); }
+  /* Filters or drill changed: a run in progress keeps what it has as one
+     session and carries on as a new one, from a fresh prompt. */
+  function changed(){
+    if (!running){ renderStrip(); return; }
+    handOver(true);
+    newSession();
+    prompt = null;
+    next();
+  }
 
   $("drillBtn").onclick = () => {
     const panel = $("drillPanel");
