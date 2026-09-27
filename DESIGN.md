@@ -421,14 +421,20 @@ ground:
 
 ## Accessibility
 
-- **Keyboard.** Space starts and stops, and Escape closes modals. In naming drills,
-  `A`–`G` plus `#` or `b` answer. Arrow keys move a focus cursor over the fretboard
-  and Enter taps it, so every drill works without touch.
-- **Focus-visible** outlines on all controls.
-- **ARIA.** The prompt is an `aria-live` region, so screen readers announce each new
-  prompt and the result.
-- **Colour is never the only signal.** Correct and wrong also differ in shape (a
-  check and a cross).
+- **Keyboard.** Space starts and stops a run, and Escape closes a panel or, with
+  none open, stops a run; after a wrong answer, Space or Enter goes on. In naming
+  drills, `A`–`G` plus `#` or `b` answer: a letter waits a moment for its
+  accidental, but is timed from the letter. The fretboard takes focus: the arrow
+  keys move a cursor over it, and Enter or Space taps where it is, so every drill
+  works without touch. The arrows step along the neck's own lines — along a string,
+  or across the strings at the same fret — and each pair takes whichever line runs
+  most its way on screen, so they go where they look like they should in every view.
+- **Focus-visible** outlines on all controls, and the board's edge while it has focus.
+- **ARIA.** The prompt is an `aria-live` region, so screen readers hear each new
+  prompt; in name the note it also says which fret is marked. A second, unseen
+  region says each result ("No: that's G. F♯ is at string 5, fret 9") and where the
+  fretboard cursor has moved — between runs with the note there, during one without.
+- **Colour is never the only signal.** A miss is crossed through, as well as red.
 - **`prefers-reduced-motion`** removes the flash animations.
 
 ## Milestones

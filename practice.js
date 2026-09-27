@@ -16,18 +16,27 @@ import {
   wholeNeck, findsAll,
 } from "./drills.js";
 import { fretRange, stringNumber, pitchAt } from "./instrument.js";
-import { noteName } from "./theory.js";
+import { noteName, parseNote } from "./theory.js";
 import { createRecorder } from "./sessions.js";
 
 const NEXT_MS = 400;         // after a right answer, before the next prompt
+const ACCIDENTAL_MS = 450;   // naming by keyboard: how long a letter waits for a ♯ or ♭
+
+/* "string 5, fret 3" or "string 5, open": a position in words. */
+export function where(inst, pos){
+  const s = inst.strings[pos.string];
+  return `string ${stringNumber(pos.string, inst.strings.length)}, ` +
+         (pos.fret === s.start ? "open" : `fret ${pos.fret}`);
+}
 
 /* `board` is the fretboard; `getInst` and `getFrom` say what's on it;
    `getSettings`/`saveSettings` hold the drill choice; `onChange` is told when
    a run starts or stops, so the page can put its idle state back;
    `onSession(recorder, done)` is handed the run's session to save — when it
    stops (done), and along the way when the page is hidden, in case it isn't
-   coming back. */
-export function createPractice({ board, getInst, getFrom, getSettings, saveSettings, onChange, onSession }){
+   coming back; `announce(text)` says what happened, for a screen reader. */
+export function createPractice({ board, getInst, getFrom, getSettings, saveSettings, onChange, onSession,
+                                 announce = () => {} }){
   let running = false, state = "idle";   // idle | asking | between | reveal
   let prompt = null, cands = [], score = createScore(), t0 = 0, timer = 0;
   let found = [], misses = [], revealed = false, chosen = null;   // chosen: an answer button pressed
@@ -83,9 +92,12 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
       if (state !== "asking" && chosen !== null){
         if (pc === prompt.pc) cls += " right";
         else if (pc === chosen) cls += " wrong";
-      }
+      } else if (pending && pending.pc === pc) cls += " pending";   // typed, waiting for ♯ or ♭
+      // pointerdown for the time; click for a keyboard's Enter or Space. After
+      // the first, the prompt has moved on, so one press can't answer twice.
       return h("button", { class: cls, type: "button", "data-pc": String(pc),
-        onpointerdown: e => { e.preventDefault(); answerNote(pc, e); } }, noteName(pc, pref()));
+        onpointerdown: e => { e.preventDefault(); answerNote(pc, e); },
+        onclick: e => answerNote(pc, e) }, noteName(pc, pref()));
     }));
   }
 
@@ -97,9 +109,14 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     $("runBtn").classList.toggle("stop", running);
     $("score").textContent = scoreText(score);
     if (running && prompt){
-      $("prompt").replaceChildren(h("b", {}, promptText(prompt, getInst(), pref(), found.length)));
+      // Which fret is marked is plain to see; a screen reader has to be told.
+      $("prompt").replaceChildren(h("b", {}, promptText(prompt, getInst(), pref(), found.length)),
+        prompt.kind === "name" ? h("span", { class: "sr" }, `: ${where(getInst(), prompt.pos)}`) : null);
     }
   }
+
+  const nameAt = pos => noteName(pitchAt(getInst(), pos.string, pos.fret), pref());
+  const places = ts => ts.map(t => where(getInst(), t)).join(", and ");
 
   const render = () => { paint(); renderAnswers(); renderStrip(); };
 
@@ -114,6 +131,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
 
   function next(){
     clearTimeout(timer);
+    clearPending();
     cands = pool();
     if (!cands.length){
       stop();
@@ -165,14 +183,19 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
         t0 = e.timeStamp;                  // each find timed from the last
         if (found.length === prompt.targets.length){
           state = "between";
+          announce(`All ${found.length} found.`);
           render();
           timer = setTimeout(next, NEXT_MS);
-        } else render();
+        } else {
+          announce(`Found, ${found.length} of ${prompt.targets.length}.`);
+          render();
+        }
       } else {
         // A miss counts, and shows, but doesn't end the prompt.
         score.add(false, ms);
         recorder.add(pos, false, ms);
         misses = [pos];
+        announce(`No: that's ${nameAt(pos)}.`);
         render();
       }
       return;
@@ -180,23 +203,70 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     /* A miss is kept against the fret you tapped: that's the one whose note
        you got wrong. */
     recorder.add(pos, ok, ms);
-    if (ok){ found = [pos]; right(ms); }
-    else { misses = [pos]; wrong(ms); }
+    if (ok){
+      found = [pos];
+      announce(`Right: ${nameAt(pos)}.`);
+      right(ms);
+    } else {
+      misses = [pos];
+      announce(`No: that's ${nameAt(pos)}. ${noteName(prompt.pc, pref())} is at ${places(prompt.targets)}. ` +
+               `Press Space to go on.`);
+      wrong(ms);
+    }
   }
 
   /* Naming: right or wrong, it's about the marked fret. */
   function answerNote(pc, e){
     if (!running || state !== "asking") return;
+    clearPending();
     chosen = pc;
     const ms = since(e), ok = isRight(prompt, pc);
     recorder.add(prompt.pos, ok, ms);
-    if (ok) right(ms);
-    else wrong(ms);
+    if (ok){
+      announce(`Right: ${noteName(prompt.pc, pref())}.`);
+      right(ms);
+    } else {
+      announce(`No: it's ${noteName(prompt.pc, pref())}. Press Space to go on.`);
+      wrong(ms);
+    }
   }
+
+  /* Naming by keyboard: a letter, then a ♯ ("#") or ♭ ("b") if it has one.
+     The letter waits a moment for one, then counts as natural; Enter doesn't
+     wait. It's timed from the letter, so pausing for the accidental costs
+     nothing. A lower-case b straight after a letter is a flat; otherwise
+     it's the note B. */
+  let pending = null, pendingTimer = 0;
+  function clearPending(){ clearTimeout(pendingTimer); pending = null; }
+  function commit(){
+    if (!pending) return;
+    const { pc, at } = pending;
+    clearPending();
+    answerNote(pc, { timeStamp: at });
+  }
+  addEventListener("keydown", e => {
+    if (!running || state !== "asking" || !prompt || prompt.kind !== "name") return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target instanceof Element && e.target.closest("input, textarea, select, .settings")) return;
+    const k = e.key;
+    let text = null;
+    if (pending && (k === "#" || k === "b")) text = pending.letter + k;
+    else if (/^[a-g]$/i.test(k)) text = k.toUpperCase();
+    else if (pending && k === "Enter"){ e.preventDefault(); commit(); return; }
+    if (!text) return;
+    e.preventDefault();
+    const pc = parseNote(text);
+    if (text.length === 2){ pending.pc = pc; commit(); return; }
+    clearPending();
+    pending = { letter: text, pc, at: e.timeStamp };
+    pendingTimer = setTimeout(commit, ACCIDENTAL_MS);
+    renderAnswers();
+  });
 
   /* After a wrong answer, any tap moves on — except Stop, which stops. The
      tap that moves on does nothing else, so it can't answer the next prompt
-     before you've seen it. */
+     before you've seen it. Space or Enter does the same, wherever focus is,
+     the fretboard included: caught before it can tap there. */
   addEventListener("pointerdown", e => {
     if (state !== "reveal") return;
     if (e.target instanceof Element && e.target.closest("#runBtn, .appbar, .neckctl, .settings")) return;
@@ -205,8 +275,12 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     next();
   }, { capture: true });
   addEventListener("keydown", e => {
-    if (state === "reveal" && (e.key === " " || e.key === "Enter")){ e.preventDefault(); next(); }
-  });
+    if (state !== "reveal" || (e.key !== " " && e.key !== "Enter")) return;
+    if (e.target instanceof Element && e.target.closest("#runBtn, .settings, input")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    next();
+  }, { capture: true });
 
   function start(){
     if (!getInst()) return;
@@ -220,6 +294,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
 
   function stop(){
     clearTimeout(timer);
+    clearPending();
     const was = running;
     if (was) handOver(true);
     recorder = null;

@@ -119,6 +119,7 @@
   .answers .ans{padding:10px 0;font-size:14px;font-weight:600;min-width:0}
   .answers .ans.right{background:var(--true);border-color:var(--true);color:#0C1710}
   .answers .ans.wrong{background:var(--miss);border-color:var(--miss);color:#fff}
+  .answers .ans.pending{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
   .board{flex:1 1 auto;min-height:140px;position:relative;background:var(--panel);
     border-radius:var(--r2);overflow:hidden;display:flex;align-items:center;
     justify-content:center;
@@ -292,6 +293,16 @@
   .fb-mark.miss text{fill:#fff}
   .fb-mark.target circle{fill:none;stroke:var(--ink)}
   .fb-mark.target text{fill:var(--ink)}
+  /* A miss is crossed through: right and wrong differ in shape, not only colour. */
+  .fb-mark .x{stroke:#fff;stroke-width:2;stroke-linecap:round;opacity:.5}
+  /* The keyboard's cursor: the cell outlined, drawn only while the board has focus. */
+  .fb-cursor{fill:rgba(234,240,246,.08);stroke:var(--ink);stroke-width:2;stroke-dasharray:4 3}
+  .fb:focus{outline:none}
+  .board.live:focus-within{box-shadow:inset 0 0 0 2px var(--true)}
+
+  /* Read out, not shown. */
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);
+    white-space:nowrap}
 
   /* The strip above the board: how many frets it shows, and the whole neck
      in miniature to move along it. */
@@ -460,6 +471,9 @@
 </div>
 
 <div id="msg" role="status" aria-live="polite"></div>
+<!-- Heard, not seen: what just happened — an answer's result, where the
+     fretboard's cursor has moved. The prompt announces itself. -->
+<div id="announce" class="sr" aria-live="assertive"></div>
 <button id="toast" type="button" hidden>Updated — tap to reload</button>
 
 <script type="module">
@@ -478,7 +492,7 @@ import { noteName, pitchName } from "./theory.js";
 import { renderEditor } from "./editor.js";
 import { createFretboard, createNeckBar } from "./fretboard.js";
 import { lastFrom } from "./instrument.js";
-import { createPractice } from "./practice.js";
+import { createPractice, where } from "./practice.js";
 
 let settings = loadSettings();
 let instruments = loadInstruments();
@@ -578,6 +592,23 @@ function tapped(pos, e){
   $("prompt").replaceChildren(h("b", {}, pitchName(midi, settings.notePref)), h("i", {}, where));
 }
 
+/* Says what's heard but not seen. Cleared first, so saying the same thing
+   twice running is still heard twice. */
+function announce(text){
+  const el = $("announce");
+  el.textContent = "";
+  requestAnimationFrame(() => { el.textContent = text; });
+}
+
+/* The keyboard cursor moved: where it is, and between runs the note there
+   too. During a run the note is the answer, so only the place is said. */
+function cursorMoved(pos){
+  const inst = current();
+  if (!inst) return;
+  const note = practice.running ? "" : `: ${noteName(pitchAt(inst, pos.string, pos.fret), settings.notePref)}`;
+  announce(`${where(inst, pos)}${note}`);
+}
+
 function renderBoard(){
   const inst = current();
   $("instName").textContent = inst ? inst.name : "No instrument";
@@ -587,7 +618,7 @@ function renderBoard(){
   renderNeckCtl(inst);
   if (inst){
     $("board").classList.add("live");
-    if (!board) board = createFretboard($("board"), { onTap: tapped });
+    if (!board) board = createFretboard($("board"), { onTap: tapped, onCursor: cursorMoved });
     board.show(inst, { from });
     // A run carries on with a prompt from whatever changed; otherwise, the
     // idle line.
@@ -779,6 +810,18 @@ practice = createPractice({
   // Stopped: the strip goes back to naming what you tap.
   onChange: running => { if (!running) renderBoard(); },
   onSession: keep,
+  announce,
+});
+
+/* Space starts and stops a run, and Escape stops one — when nothing else
+   wants the key: a button or field has its own use for Space, the
+   fretboard taps with it, and Escape closes an open panel first. */
+addEventListener("keydown", e => {
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+  const inControl = e.target instanceof Element &&
+    e.target.closest("button, input, select, textarea, a, .fb, .nb, .settings");
+  if (e.key === " " && !inControl){ e.preventDefault(); $("runBtn").click(); }
+  else if (e.key === "Escape" && practice.running){ e.preventDefault(); practice.stop(); }
 });
 
 /* A run handed over to be kept: on Stop (done), or quietly when the page is
