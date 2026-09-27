@@ -13,10 +13,10 @@
 import { $, h, fill, label, say, openPanel, closePanel, isOpen } from "./ui.js";
 import {
   DRILLS, DRILL_KINDS, candidates, makePrompt, promptText, isRight, createScore, scoreText,
-  wholeNeck, findsAll,
+  wholeNeck, findsAll, usesNotes, answerName, ALL_INTERVALS,
 } from "./drills.js";
 import { fretRange, stringNumber, pitchAt } from "./instrument.js";
-import { noteName, parseNote } from "./theory.js";
+import { noteName, parseNote, INTERVALS } from "./theory.js";
 import { createRecorder } from "./sessions.js";
 
 const NEXT_MS = 400;         // after a right answer, before the next prompt
@@ -46,8 +46,9 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
   /* A session covers one drill with one set of filters, so changing either
      mid-run hands over the session so far and starts another. */
   function newSession(){
-    recorder = createRecorder({ inst: getInst(), drill: kind(), notes: getSettings().drillNotes, strings });
+    recorder = createRecorder({ inst: getInst(), drill: kind(), notes: notesFilter(), strings });
   }
+  const notesFilter = () => usesNotes(kind()) ? getSettings().drillNotes : "all";
   function handOver(done){
     if (recorder && recorder.answers && onSession) onSession(recorder, done);
   }
@@ -69,15 +70,19 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     board.setDim(running && prompt && !wholeNeck(prompt.kind) ? windowRange() : null);
     if (!prompt) return;
     const name = m => noteName(pitchAt(inst, m.string, m.fret), pref());
+    // An interval's root is marked throughout, in the amber study uses for
+    // roots, and its answers are spelled from it.
+    if (prompt.root) board.mark(prompt.root, "root", noteName(prompt.rootPc, pref()));
+    const answer = prompt.kind === "interval" ? () => answerName(prompt, pref()) : name;
     if (prompt.kind === "name"){
       board.mark(prompt.pos, revealed ? "target" : (state === "between" ? "true" : "target"),
                  revealed || state === "between" ? noteName(prompt.pc, pref()) : "?");
     }
-    for (const f of found) board.mark(f, "true", name(f));
+    for (const f of found) board.mark(f, "true", answer(f));
     for (const m of misses) board.mark(m, "miss", name(m));
     if (revealed && prompt.kind !== "name"){
       for (const t of prompt.targets) if (!found.some(f => f.string === t.string && f.fret === t.fret)){
-        board.mark(t, "target", name(t));
+        board.mark(t, "target", answer(t));
       }
     }
   }
@@ -111,7 +116,8 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     if (running && prompt){
       // Which fret is marked is plain to see; a screen reader has to be told.
       fill($("prompt"), h("b", {}, promptText(prompt, getInst(), pref(), found.length)),
-        prompt.kind === "name" ? h("span", { class: "sr" }, `: ${where(getInst(), prompt.pos)}`) : null);
+        prompt.kind === "name" ? h("span", { class: "sr" }, `: ${where(getInst(), prompt.pos)}`) : null,
+        prompt.root ? h("span", { class: "sr" }, `, the root at ${where(getInst(), prompt.root)}`) : null);
     }
   }
 
@@ -126,19 +132,22 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     const inst = getInst();
     if (!inst) return [];
     const range = wholeNeck(kind()) ? [0, inst.frets] : windowRange();
-    return candidates(inst, range, { strings, notes: getSettings().drillNotes });
+    return candidates(inst, range, { strings, notes: notesFilter() });
   }
 
   function next(){
     clearTimeout(timer);
     clearPending();
     cands = pool();
-    if (!cands.length){
+    // An interval needs both its notes in view, so there can be places to
+    // stand but nothing to ask.
+    const made = cands.length ? makePrompt(kind(), cands, { last: prompt, intervals: getSettings().drillIntervals }) : null;
+    if (!made){
       stop();
       say("Nothing to ask here: widen the frets shown or the drill's filters.");
       return;
     }
-    prompt = makePrompt(kind(), cands, { last: prompt });
+    prompt = made;
     found = []; misses = []; revealed = false; chosen = null;
     state = "asking";
     render();
@@ -209,7 +218,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
       right(ms);
     } else {
       misses = [pos];
-      announce(`No: that's ${nameAt(pos)}. ${noteName(prompt.pc, pref())} is at ${places(prompt.targets)}. ` +
+      announce(`No: that's ${nameAt(pos)}. ${answerName(prompt, pref())} is at ${places(prompt.targets)}. ` +
                `Press Space to go on.`);
       wrong(ms);
     }
@@ -341,16 +350,35 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
       return b;
     }).reverse() : [];                       // string 1 first, as players count
 
-    const notes = h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "drillNotesLabel" },
-      [["all", "All notes"], ["naturals", "Naturals only"]].map(([v, t]) =>
-        chip(s.drillNotes === v, t, null, () => { saveSettings({ drillNotes: v }); renderPanel(); changed(); })));
+    const notes = usesNotes(s.drill) ? [
+      h("h2", { id: "drillNotesLabel" }, "Notes"),
+      h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "drillNotesLabel" },
+        [["all", "All notes"], ["naturals", "Naturals only"]].map(([v, t]) =>
+          chip(s.drillNotes === v, t, null, () => { saveSettings({ drillNotes: v }); renderPanel(); changed(); }))),
+    ] : null;
+
+    // Which intervals come up: at least one.
+    const intervals = s.drill === "interval" ? [
+      h("h2", {}, "Intervals ", h("span", { class: "hint" }, "tap to leave one out")),
+      h("div", { class: "pick" }, INTERVALS.map(iv => {
+        const on = s.drillIntervals.includes(iv.semis);
+        const b = chip(on, iv.short, null, () => {
+          const next = on ? s.drillIntervals.filter(x => x !== iv.semis)
+                          : ALL_INTERVALS.filter(x => x === iv.semis || s.drillIntervals.includes(x));
+          if (!next.length) return;
+          saveSettings({ drillIntervals: next }); renderPanel(); changed();
+        }, "checkbox");
+        label(b, iv.name);
+        return b;
+      })),
+    ] : null;
 
     fill($("drillPanel"),
       h("div", { class: "sect" }, h("h2", { id: "drillKindLabel" }, "Drill"), kinds),
       h("div", { class: "sect" },
         h("h2", {}, "Strings ", h("span", { class: "hint" }, "tap to leave one out")),
         h("div", { class: "pick" }, stringChips),
-        h("h2", { id: "drillNotesLabel" }, "Notes"), notes),
+        notes, intervals),
       h("div", { class: "sect" },
         h("p", { class: "note" }, "The frets shown are the practice range: every prompt is in view, " +
           "and the neck past them is dimmed. Change them with − / + and the neck bar at the top. " +
