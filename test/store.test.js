@@ -76,15 +76,17 @@ test("settings default, merge, and ignore invalid values", () => {
   assert.deepEqual(loadSettings(), SETTINGS_DEFAULTS);
   assert.ok(saveSettings({ notePref: "flat" }));
   assert.ok(saveSettings({ instrument: "abc" }));
-  assert.deepEqual(loadSettings(), { notePref: "flat", instrument: "abc" });
+  assert.ok(saveSettings({ drill: "findAll", drillNotes: "naturals" }));
+  const want = { ...SETTINGS_DEFAULTS, notePref: "flat", instrument: "abc", drill: "findAll", drillNotes: "naturals" };
+  assert.deepEqual(loadSettings(), want);
 
-  saveSettings({ notePref: "sideways", bogus: 1 });
-  assert.deepEqual(loadSettings(), { notePref: "flat", instrument: "abc" });
+  saveSettings({ notePref: "sideways", drill: "juggle", drillNotes: "some", bogus: 1 });
+  assert.deepEqual(loadSettings(), want);
 });
 
 test("a bad stored setting falls back without spoiling the rest", () => {
-  store.setItem(KEYS.settings, JSON.stringify({ notePref: 7, instrument: "abc" }));
-  assert.deepEqual(loadSettings(), { notePref: "sharp", instrument: "abc" });
+  store.setItem(KEYS.settings, JSON.stringify({ notePref: 7, instrument: "abc", drill: "name" }));
+  assert.deepEqual(loadSettings(), { ...SETTINGS_DEFAULTS, instrument: "abc", drill: "name" });
 });
 
 test("blocked storage reads empty and reports failed writes", () => {

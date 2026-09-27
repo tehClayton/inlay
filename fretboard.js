@@ -484,6 +484,12 @@ export function createFretboard(host, { onTap } = {}){
     show(next, { from: f = 0, dim: d = null } = {}){ inst = next; from = f; dim = d; marks = []; draw(); },
     /* Moves the window along the neck, keeping the marks. */
     moveTo(f){ from = f; draw(); },
+    /* Frets to leave bright, [lo, hi], dimming the rest; null for none.
+       Keeps the marks. */
+    setDim(d){
+      if (d === dim || (d && dim && d[0] === dim[0] && d[1] === dim[1])) return;
+      dim = d; draw();
+    },
     /* A marker on a position: kind is a class ("note", "true", "miss",
        "target"), text an optional label inside it. */
     mark(pos, kind, text){ marks.push({ pos, kind, text }); draw(); },

@@ -9,6 +9,7 @@
    Sessions and sets join this file in later milestones. */
 import { validate as validateInstrument, upgrade as upgradeInstrument } from "./instrument.js";
 import { NOTE_PREFS } from "./theory.js";
+import { DRILL_KINDS } from "./drills.js";
 
 export const KEYS = {
   instruments: "inlay.instruments.v1",
@@ -67,11 +68,15 @@ export function deleteInstrument(id){
 export const SETTINGS_DEFAULTS = Object.freeze({
   notePref: "sharp",     // sharp | flat | both
   instrument: null,      // id of the instrument last used
+  drill: "findOn",       // the drill last chosen: see drills.js
+  drillNotes: "all",     // all | naturals
 });
 
 const SETTINGS_VALID = {
   notePref: v => NOTE_PREFS.includes(v),
   instrument: v => v === null || typeof v === "string",
+  drill: v => DRILL_KINDS.includes(v),
+  drillNotes: v => v === "all" || v === "naturals",
 };
 
 /* Defaults, overlaid with whatever stored values are still valid, so a bad
