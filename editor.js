@@ -4,7 +4,7 @@
    Tunings are typed ("E2", "Db3") because that is faster than any picker for
    someone who knows their tuning, and it covers every instrument without a
    list of presets to maintain. Each field says immediately whether it reads. */
-import { h, label } from "./ui.js";
+import { h, fill, label } from "./ui.js";
 import { parsePitch, pitchName, noteName } from "./theory.js";
 import {
   validate, stringNumber, VIEW_PRESETS, VIEW_RANGES, presetOf, MIN_SPAN,
@@ -48,7 +48,7 @@ export function renderEditor(root, { inst, isNew, history = 0, notePref, boardSi
   /* Rows are rebuilt whenever strings are added or removed; typing only
      updates the draft, so a field never loses focus under the cursor. */
   function drawRows(){
-    rows.replaceChildren(...draft.strings.map((s, i) => {
+    fill(rows, ...draft.strings.map((s, i) => {
       const n = stringNumber(i, draft.strings.length);
       const tune = h("input", {
         type: "text", class: "tune", value: s.text, autocomplete: "off",
@@ -132,7 +132,7 @@ export function renderEditor(root, { inst, isNew, history = 0, notePref, boardSi
     const out = build();
     if (!isNew && history > 0 && stringsChanged(inst, out)){
       ask.hidden = false;
-      ask.replaceChildren(
+      fill(ask,
         h("p", { class: "note" }, `${inst.name} has ${history} practice session${history === 1 ? "" : "s"} ` +
           `recorded against its strings. Changing them changes which note each of those answers was.`),
         h("div", { class: "btns" },
@@ -230,9 +230,8 @@ export function renderEditor(root, { inst, isNew, history = 0, notePref, boardSi
   function refreshView(inst){
     if (inst && validate(inst).length === 0) lastGood = inst;
     const which = presetOf(draft.view);
-    // Filtered, because replaceChildren prints a null as the text "null".
-    presetPick.replaceChildren(...[
-      ...Object.keys(VIEW_PRESETS).map(p => {
+    fill(presetPick,
+      Object.keys(VIEW_PRESETS).map(p => {
         const on = which === p;
         return h("button", {
           class: "chip two" + (on ? " sel" : ""), role: "radio", "aria-checked": String(on),
@@ -241,8 +240,7 @@ export function renderEditor(root, { inst, isNew, history = 0, notePref, boardSi
         }, h("b", {}, PRESET_TEXT[p][0]), h("i", {}, PRESET_TEXT[p][1]));
       }),
       which ? null : h("span", { class: "chip two sel custom", "aria-current": "true" },
-        h("b", {}, "Custom"), h("i", {}, "adjusted below")),
-    ].filter(Boolean));
+        h("b", {}, "Custom"), h("i", {}, "adjusted below")));
     for (const sl of sliders){
       sl.input.value = String(draft.view[sl.key]);
       sl.out.textContent = sl.say(draft.view[sl.key]);
@@ -272,7 +270,7 @@ export function renderEditor(root, { inst, isNew, history = 0, notePref, boardSi
   label(name, "Instrument name");
   label(frets, `Number of frets, 1 to ${MAX_FRETS}`);
 
-  root.replaceChildren(
+  fill(root,
     h("div", { class: "sect" }, title, name),
     h("div", { class: "sect" },
       h("h2", {}, "Strings ", h("span", { class: "hint" }, "nearest your face first")),
