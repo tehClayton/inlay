@@ -90,6 +90,22 @@ export const trend = sessions => sessions.map(s => ({
   t: s.t, key: s.key, label: s.label, dur: s.dur, ...totals(Object.values(s.pos)),
 }));
 
+/* ---------------------------------------------------------- formatting */
+/* Numbers as the history screen writes them. A dash where there's nothing
+   to say, never a 0 that looks like a result. */
+const DASH = "—";
+export const fmtPct = x => x == null ? DASH : `${Math.round(x * 100)}%`;
+export const fmtTime = ms => ms == null ? DASH : `${(ms / 1000).toFixed(ms < 9950 ? 2 : 1)} s`;
+export const fmtSpread = r => r == null ? DASH : `×${r.toFixed(2)}`;
+
+/* A length of time: "0:42", "12:05", "1:02:03". */
+export function fmtDur(ms){
+  const s = Math.round(ms / 1000);
+  const hh = Math.floor(s / 3600), mm = Math.floor(s / 60) % 60, ss = s % 60;
+  const p = n => String(n).padStart(2, "0");
+  return hh ? `${hh}:${p(mm)}:${p(ss)}` : `${mm}:${p(ss)}`;
+}
+
 /* An individuals control chart's centre line and limits, as millitap's spread
    chart draws them: the mean, and 2.66 average moving ranges either side.
    Points outside the limits are more than the run-to-run noise. `log` works
