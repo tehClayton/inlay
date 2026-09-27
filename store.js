@@ -8,8 +8,8 @@
 
    Sets join this file in a later milestone. */
 import { validate as validateInstrument, upgrade as upgradeInstrument } from "./instrument.js";
-import { NOTE_PREFS, CHORDS } from "./theory.js";
-import { DRILL_KINDS, ALL_INTERVALS, DEFAULT_CHORDS } from "./drills.js";
+import { NOTE_PREFS, CHORDS, SCALES } from "./theory.js";
+import { DRILL_KINDS, ALL_INTERVALS, DEFAULT_CHORDS, DEFAULT_SCALES } from "./drills.js";
 import { isSession } from "./sessions.js";
 
 export const KEYS = {
@@ -161,6 +161,8 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   drillNotes: "all",     // all | naturals
   drillIntervals: ALL_INTERVALS,   // the interval drill's intervals, as semitones
   drillChords: DEFAULT_CHORDS,     // the chord drill's chord types (theory.js CHORDS)
+  drillScales: DEFAULT_SCALES,     // the scale drill's scale types (theory.js SCALES)
+  drillScaleOrder: "any",          // any | up
   drillRoot: null,                 // the theory drills' root: a pitch class, or null for random
   lastExport: null,      // when a backup was last exported from this device, ms
 });
@@ -174,6 +176,9 @@ const SETTINGS_VALID = {
     v.every(s => ALL_INTERVALS.includes(s)),
   drillChords: v => Array.isArray(v) && v.length > 0 && new Set(v).size === v.length &&
     v.every(id => Object.hasOwn(CHORDS, id)),
+  drillScales: v => Array.isArray(v) && v.length > 0 && new Set(v).size === v.length &&
+    v.every(id => Object.hasOwn(SCALES, id)),
+  drillScaleOrder: v => v === "any" || v === "up",
   drillRoot: v => v === null || (Number.isInteger(v) && v >= 0 && v < 12),
   lastExport: v => v === null || (Number.isFinite(v) && v > 0),
 };

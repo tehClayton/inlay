@@ -131,6 +131,20 @@ test("the chord drill's types and the theory drills' root", () => {
   assert.equal(loadSettings().drillRoot, null);
 });
 
+test("the scale drill's types and order", () => {
+  assert.deepEqual(loadSettings().drillScales, ["major", "minor", "minorPentatonic"]);
+  assert.equal(loadSettings().drillScaleOrder, "any");
+  assert.ok(saveSettings({ drillScales: ["dorian", "blues"], drillScaleOrder: "up" }));
+  assert.deepEqual(loadSettings().drillScales, ["dorian", "blues"]);
+  assert.equal(loadSettings().drillScaleOrder, "up");
+  for (const bad of [[], ["dorian", "dorian"], ["bebop"]]){
+    saveSettings({ drillScales: bad });
+    assert.deepEqual(loadSettings().drillScales, ["dorian", "blues"], JSON.stringify(bad));
+  }
+  saveSettings({ drillScaleOrder: "down" });
+  assert.equal(loadSettings().drillScaleOrder, "up");
+});
+
 test("a bad stored setting falls back without spoiling the rest", () => {
   store.setItem(KEYS.settings, JSON.stringify({ notePref: 7, instrument: "abc", drill: "name" }));
   assert.deepEqual(loadSettings(), { ...SETTINGS_DEFAULTS, instrument: "abc", drill: "name" });
