@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   candidates, makePrompt, promptText, isRight, createScore, scoreText, DRILL_KINDS, SLOW_MS,
-  answerName, usesNotes, ALL_INTERVALS, findsAll,
+  answerName, usesNotes, ALL_INTERVALS, findsAll, needed,
 } from "../drills.js";
 import { newInstrument } from "../instrument.js";
 import { parsePitch, noteName } from "../theory.js";
@@ -54,7 +54,7 @@ test("every kind of prompt's targets answer it", () => {
       assert.ok(p.targets.length >= 1, kind);
       for (const t of p.targets){
         // A chord's targets are any of its notes; every other drill's, one.
-        if (kind === "chord") assert.ok(p.tones.includes(t.pc), kind);
+        if (kind === "chord" || kind === "scale") assert.ok(p.tones.includes(t.pc), kind);
         else assert.equal(t.pc, p.pc, kind);
         if (kind === "name") assert.ok(isRight(p, t.midi));
         else assert.ok(isRight(p, t), `${kind} target should be right`);
@@ -136,7 +136,7 @@ test("chord: only the types chosen, each as often as the others; the root random
   const types = {}, roots = new Set();
   for (let i = 0; i < 3000; i++){
     const p = makePrompt("chord", c, { rng, chords: ["minor", "maj7"] });
-    types[p.chord] = (types[p.chord] ?? 0) + 1;
+    types[p.type] = (types[p.type] ?? 0) + 1;
     roots.add(p.rootPc);
   }
   assert.deepEqual(Object.keys(types).sort(), ["maj7", "minor"]);
@@ -167,6 +167,61 @@ test("chord: named and spelled for the chord", () => {
   // D♭ F A♭ has fewer accidentals than C♯ E♯ G♯, whatever the preference.
   const r = makePrompt("chord", c, { chords: ["major"], root: 1 });
   assert.equal(promptText(r, guitar(), "sharp"), "D♭ major");
+});
+
+test("scale, any order: every place in view that plays one of its notes", () => {
+  const c = candidates(guitar(), [5, 9]), rng = seeded(6);
+  for (let i = 0; i < 100; i++){
+    const p = makePrompt("scale", c, { rng });
+    assert.equal(p.order, "any");
+    assert.deepEqual(p.targets, c.filter(x => p.tones.includes(x.pc)));
+    assert.equal(needed(p), p.targets.length);
+    assert.ok(["major", "minor", "minorPentatonic"].includes(p.type));
+    assert.ok(findsAll("scale") && !usesNotes("scale"));
+  }
+});
+
+test("scale going up: each pitch in view once, lowest first; any place playing it counts", () => {
+  const c = candidates(guitar(), [5, 9]);
+  const p = makePrompt("scale", c, { scales: ["major"], root: 0, order: "up" });   // C major
+  assert.equal(p.order, "up");
+  const pitches = [...new Set(p.targets.map(t => t.midi))].sort((a, b) => a - b);
+  assert.deepEqual(p.steps, pitches);
+  assert.equal(needed(p), pitches.length);
+  // Walk it: at each step, every place playing that pitch is right, and
+  // every other scale note is wrong until its turn.
+  const found = [];
+  for (const midi of p.steps){
+    const here = p.targets.filter(t => t.midi === midi);
+    for (const t of here) assert.ok(isRight(p, t, found));
+    for (const t of p.targets.filter(t => t.midi !== midi)) assert.ok(!isRight(p, t, found));
+    found.push(here[here.length - 1]);
+  }
+});
+
+test("scale going up: the prompt says so, and counts steps", () => {
+  const c = candidates(guitar(), [5, 9]);
+  const p = makePrompt("scale", c, { scales: ["dorian"], root: 2, order: "up" });
+  assert.equal(promptText(p, guitar(), "sharp"), "D dorian, going up");
+  assert.equal(promptText(p, guitar(), "sharp", 2), `D dorian, going up · 2 of ${p.steps.length}`);
+  const q = makePrompt("scale", c, { scales: ["dorian"], root: 2 });
+  assert.equal(promptText(q, guitar(), "sharp"), "D dorian");
+});
+
+test("scale: spelled for the key", () => {
+  const c = candidates(guitar(), [0, 12]);
+  const p = makePrompt("scale", c, { scales: ["major"], root: 5 });            // F major
+  assert.equal(answerName(p, "sharp", 10), "B♭");
+  const q = makePrompt("scale", c, { scales: ["harmonicMinor"], root: 4 });    // E harmonic minor
+  assert.equal(answerName(q, "flat", 3), "D♯");
+});
+
+test("scale: only the types chosen, and only when every note is in view", () => {
+  const c = candidates(guitar(), [0, 12]), rng = seeded(2);
+  for (let i = 0; i < 100; i++) assert.equal(makePrompt("scale", c, { rng, scales: ["blues"] }).type, "blues");
+  // One string, frets 0–4: five notes, too few for a seven-note scale.
+  const d = candidates(guitar(), [0, 4], { strings: [0] });
+  assert.equal(makePrompt("scale", d, { scales: ["major"] }), null);
 });
 
 test("find on a string: the note on that string only, both octaves in view", () => {

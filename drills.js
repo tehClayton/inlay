@@ -5,7 +5,7 @@
    on screen, narrowed by the filters. The frets shown are the practice
    range — zoom in on frets 5–9 and every prompt is in 5–9. */
 import { pitchAt, stringNumber } from "./instrument.js";
-import { pitchClass, isNatural, noteName, INTERVALS, intervalNote, CHORDS, tones, spell } from "./theory.js";
+import { pitchClass, isNatural, noteName, INTERVALS, intervalNote, CHORDS, SCALES, tones, spell } from "./theory.js";
 
 export const DRILLS = Object.freeze({
   findAny:     { name: "Find any",             blurb: "tap the note anywhere in view" },
@@ -15,6 +15,7 @@ export const DRILLS = Object.freeze({
   name:        { name: "Name the note",        blurb: "say which note is marked" },
   interval:    { name: "Interval",             blurb: "tap the pitch an interval above the root" },
   chord:       { name: "Chord tones",          blurb: "tap every note of the chord in view" },
+  scale:       { name: "Scale",                blurb: "tap the scale's notes in view, any order or up" },
 });
 export const DRILL_KINDS = Object.keys(DRILLS);
 
@@ -22,11 +23,17 @@ export const DRILL_KINDS = Object.keys(DRILLS);
    the whole neck, whatever part of it is on screen: finding the rest means
    moving along it. */
 export const wholeNeck = kind => kind === "findAllNeck";
-export const findsAll = kind => kind === "findAll" || kind === "findAllNeck" || kind === "chord";
+export const findsAll = kind => ["findAll", "findAllNeck", "chord", "scale"].includes(kind);
 
 /* The theory drills ask from a root, which can be any note, so the naturals
    filter is the note drills' alone. */
-export const usesNotes = kind => kind !== "interval" && kind !== "chord";
+export const usesNotes = kind => !["interval", "chord", "scale"].includes(kind);
+
+/* The chord and scale drills draw their types from the library. */
+const LIBRARY = { chord: CHORDS, scale: SCALES };
+
+/* The scale types the scale drill asks until told otherwise. */
+export const DEFAULT_SCALES = Object.freeze(["major", "minor", "minorPentatonic"]);
 
 /* Every interval, by its semitones: what the interval drill asks by default. */
 export const ALL_INTERVALS = Object.freeze(INTERVALS.map(i => i.semis));
@@ -61,10 +68,12 @@ const samePos = (a, b) => a.string === b.string && a.fret === b.fret;
    when there's anything else to ask. Returns null when there's nothing to
    ask at all. */
 export function makePrompt(kind, cands, { rng = Math.random, last = null, intervals = ALL_INTERVALS,
-                                          chords = DEFAULT_CHORDS, root = null } = {}){
+                                          chords = DEFAULT_CHORDS, scales = DEFAULT_SCALES, root = null,
+                                          order = "any" } = {}){
   if (!cands.length) return null;
   if (kind === "interval") return intervalPrompt(cands, { rng, last, intervals });
-  if (kind === "chord") return chordPrompt(cands, { rng, last, chords, root });
+  if (kind === "chord") return setPrompt("chord", cands, { rng, last, types: chords, root });
+  if (kind === "scale") return setPrompt("scale", cands, { rng, last, types: scales, root, order });
   const pcs = [...new Set(cands.map(c => c.pc))];
   const build = () => {
     if (kind === "name"){
@@ -124,39 +133,53 @@ function intervalPrompt(cands, { rng, last, intervals }){
   return p;
 }
 
-/* A chord prompt: a chord type from those chosen and a root, random unless
-   fixed, and every place in view that plays one of its notes. Only a chord
-   whose every note is somewhere in view is asked — "every note of A7" with
-   no G in sight can't be answered. The type is chosen evenly first, then
-   the root. */
-function chordPrompt(cands, { rng, last, chords, root }){
+/* A chord or scale prompt: a type from those chosen and a root, random
+   unless fixed, and every place in view that plays one of its notes. Only
+   a set whose every note is somewhere in view is asked — "every note of
+   A7" with no G in sight can't be answered. The type is chosen evenly
+   first, then the root.
+
+   A scale can be asked `order: "up"`: once each pitch in view, lowest to
+   highest. Then `steps` are those pitches, and any place that plays the
+   next one counts for it. */
+function setPrompt(kind, cands, { rng, last, types, root, order = "any" }){
+  const lib = LIBRARY[kind];
   const inView = new Set(cands.map(c => c.pc));
   const roots = root == null ? [...Array(12).keys()] : [root];
-  const askable = new Map();          // chord type → roots it can be asked on
-  for (const id of chords){
-    const ok = roots.filter(r => tones(r, CHORDS[id].formula).every(pc => inView.has(pc)));
+  const askable = new Map();          // type → roots it can be asked on
+  for (const id of types){
+    const ok = roots.filter(r => tones(r, lib[id].formula).every(pc => inView.has(pc)));
     if (ok.length) askable.set(id, ok);
   }
   if (!askable.size) return null;
   const build = () => {
-    const chord = pick([...askable.keys()], rng);
-    const rootPc = pick(askable.get(chord), rng);
-    const ts = tones(rootPc, CHORDS[chord].formula);
-    return { kind: "chord", chord, rootPc, tones: ts, targets: cands.filter(c => ts.includes(c.pc)),
-             key: `chord:${rootPc}:${chord}` };
+    const type = pick([...askable.keys()], rng);
+    const rootPc = pick(askable.get(type), rng);
+    const ts = tones(rootPc, lib[type].formula);
+    const targets = cands.filter(c => ts.includes(c.pc));
+    const p = { kind, type, rootPc, tones: ts, targets, order: "any", key: `${kind}:${rootPc}:${type}` };
+    if (kind === "scale" && order === "up"){
+      p.order = "up";
+      p.steps = [...new Set(targets.map(t => t.midi))].sort((a, b) => a - b);
+    }
+    return p;
   };
   let p = build();
   for (let tries = 0; last && p.key === last.key && tries < 12; tries++) p = build();
   return p;
 }
 
-/* What an answer is called. An interval's note is spelled from its root
-   and a chord's notes for the chord, so a major 3rd above A is C♯, and so
-   is the 3rd of A major, whatever the preference; the note drills' by the
-   preference. `pc` is which of a chord's notes. */
+/* How many right answers complete a find-all prompt: every target, or for
+   a scale going up, every step. */
+export const needed = p => p.order === "up" ? p.steps.length : p.targets.length;
+
+/* What an answer is called. An interval's note is spelled from its root,
+   and a chord's or scale's notes for it, so a major 3rd above A is C♯, and
+   so is the 3rd of A major, whatever the preference; the note drills' by
+   the preference. `pc` is which of a chord's or scale's notes. */
 export function answerName(p, pref, pc = p.pc){
   if (p.kind === "interval") return intervalNote(p.rootPc, p.semis, pref).name;
-  if (p.kind === "chord") return spell(p.rootPc, CHORDS[p.chord].formula, pref).find(n => n.pc === pc).name;
+  if (LIBRARY[p.kind]) return spell(p.rootPc, LIBRARY[p.kind][p.type].formula, pref).find(n => n.pc === pc).name;
   return noteName(pc, pref);
 }
 
@@ -169,9 +192,10 @@ export function promptText(p, inst, pref, found = 0){
     const s = inst.strings[p.string];
     return `${note} on string ${stringNumber(p.string, inst.strings.length)} (${noteName(s.open, pref)})`;
   }
-  if (p.kind === "chord"){
-    const root = spell(p.rootPc, CHORDS[p.chord].formula, pref)[0].name;
-    return `${root} ${CHORDS[p.chord].name}` + (found ? ` · ${found} of ${p.targets.length}` : "");
+  if (LIBRARY[p.kind]){
+    const set = LIBRARY[p.kind][p.type];
+    const root = spell(p.rootPc, set.formula, pref)[0].name;
+    return `${root} ${set.name}${p.order === "up" ? ", going up" : ""}` + (found ? ` · ${found} of ${needed(p)}` : "");
   }
   if (findsAll(p.kind)){
     const where = p.kind === "findAllNeck" ? " on the neck" : "";
@@ -185,10 +209,14 @@ export function promptText(p, inst, pref, found = 0){
   return note;
 }
 
-/* Is this tap (a position) or this choice (a pitch class) right? */
-export function isRight(p, answer){
+/* Is this tap (a position) or this choice (a pitch class) right? `found`
+   is what a find-all prompt has had so far: going up a scale, a tap is
+   right only if it plays the next pitch. */
+export function isRight(p, answer, found = []){
   if (p.kind === "name") return pitchClass(answer) === p.pc;
-  return p.targets.some(t => samePos(t, answer));
+  const t = p.targets.find(t => samePos(t, answer));
+  if (!t) return false;
+  return p.order === "up" ? t.midi === p.steps[found.length] : true;
 }
 
 /* ------------------------------------------------------------- scoring */

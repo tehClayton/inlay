@@ -13,10 +13,10 @@
 import { $, h, fill, label, say, openPanel, closePanel, isOpen } from "./ui.js";
 import {
   DRILLS, DRILL_KINDS, candidates, makePrompt, promptText, isRight, createScore, scoreText,
-  wholeNeck, findsAll, usesNotes, answerName, ALL_INTERVALS,
+  wholeNeck, findsAll, usesNotes, answerName, ALL_INTERVALS, needed,
 } from "./drills.js";
 import { fretRange, stringNumber, pitchAt } from "./instrument.js";
-import { noteName, parseNote, pitchClass, INTERVALS, CHORDS } from "./theory.js";
+import { noteName, parseNote, pitchClass, INTERVALS, CHORDS, SCALES } from "./theory.js";
 import { createRecorder } from "./sessions.js";
 
 const NEXT_MS = 400;         // after a right answer, before the next prompt
@@ -143,7 +143,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     // stand but nothing to ask.
     const s = getSettings();
     const made = cands.length ? makePrompt(kind(), cands, { last: prompt, intervals: s.drillIntervals,
-      chords: s.drillChords, root: s.drillRoot }) : null;
+      chords: s.drillChords, scales: s.drillScales, root: s.drillRoot, order: s.drillScaleOrder }) : null;
     if (!made){
       stop();
       say("Nothing to ask here: widen the frets shown or the drill's filters.");
@@ -183,22 +183,22 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
       if (pos.fret < a || pos.fret > b) return;
     }
     const ms = since(e);
-    const ok = isRight(prompt, pos);
+    if (findsAll(prompt.kind) && found.some(f => f.string === pos.string && f.fret === pos.fret)) return;   // already found
+    const ok = isRight(prompt, pos, found);
     if (findsAll(prompt.kind)){
       if (ok){
-        if (found.some(f => f.string === pos.string && f.fret === pos.fret)) return;   // already found
         found.push(pos);
         misses = [];
         score.add(true, ms);
         recorder.add(pos, true, ms);
         t0 = e.timeStamp;                  // each find timed from the last
-        if (found.length === prompt.targets.length){
+        if (found.length === needed(prompt)){
           state = "between";
           announce(`All ${found.length} found.`);
           render();
           timer = setTimeout(next, NEXT_MS);
         } else {
-          announce(`Found, ${found.length} of ${prompt.targets.length}.`);
+          announce(`Found, ${found.length} of ${needed(prompt)}.`);
           render();
         }
       } else {
@@ -206,7 +206,9 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
         score.add(false, ms);
         recorder.add(pos, false, ms);
         misses = [pos];
-        announce(`No: that's ${nameAt(pos)}.`);
+        // Going up, a note of the scale can still be the wrong one: not next.
+        const inSet = prompt.order === "up" && prompt.targets.some(t => t.string === pos.string && t.fret === pos.fret);
+        announce(inSet ? `${nameAt(pos)} is in it, but isn't the next one up.` : `No: that's ${nameAt(pos)}.`);
         render();
       }
       return;
@@ -375,22 +377,34 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
       })),
     ] : null;
 
-    // Which chord types come up: at least one.
-    const chords = s.drill === "chord" ? [
-      h("h2", {}, "Chords ", h("span", { class: "hint" }, "tap to add or leave out")),
-      h("div", { class: "pick" }, Object.entries(CHORDS).map(([id, c]) => {
-        const on = s.drillChords.includes(id);
+    // Which chord or scale types come up: at least one.
+    const typeChips = (title, lib, setting) => [
+      h("h2", {}, `${title} `, h("span", { class: "hint" }, "tap to add or leave out")),
+      h("div", { class: "pick" }, Object.entries(lib).map(([id, c]) => {
+        const on = s[setting].includes(id);
         return chip(on, c.name, null, () => {
-          const next = on ? s.drillChords.filter(x => x !== id)
-                          : Object.keys(CHORDS).filter(x => x === id || s.drillChords.includes(x));
+          const next = on ? s[setting].filter(x => x !== id)
+                          : Object.keys(lib).filter(x => x === id || s[setting].includes(x));
           if (!next.length) return;
-          saveSettings({ drillChords: next }); renderPanel(); changed();
+          saveSettings({ [setting]: next }); renderPanel(); changed();
         }, "checkbox");
       })),
+    ];
+    const types = s.drill === "chord" ? typeChips("Chords", CHORDS, "drillChords")
+                : s.drill === "scale" ? typeChips("Scales", SCALES, "drillScales") : null;
+
+    // A scale in any order, or once up through every pitch in view.
+    const order = s.drill === "scale" ? [
+      h("h2", { id: "drillOrderLabel" }, "Order"),
+      h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "drillOrderLabel" },
+        [["any", "Any order", "every place it's played"], ["up", "Going up", "each pitch once, low to high"]]
+          .map(([v, t, sub]) => chip(s.drillScaleOrder === v, t, sub, () => {
+            saveSettings({ drillScaleOrder: v }); renderPanel(); changed();
+          }))),
     ] : null;
 
-    // The root of a chord: random, or held on one note to learn its shapes.
-    const root = s.drill === "chord" ? [
+    // The root: random, or held on one note to learn its shapes.
+    const root = s.drill === "chord" || s.drill === "scale" ? [
       h("h2", { id: "drillRootLabel" }, "Root"),
       h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "drillRootLabel" },
         chip(s.drillRoot === null, "Random", null, () => { saveSettings({ drillRoot: null }); renderPanel(); changed(); }),
@@ -405,7 +419,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
       h("div", { class: "sect" },
         h("h2", {}, "Strings ", h("span", { class: "hint" }, "tap to leave one out")),
         h("div", { class: "pick" }, stringChips),
-        notes, intervals, chords, root),
+        notes, intervals, types, order, root),
       h("div", { class: "sect" },
         h("p", { class: "note" }, "The frets shown are the practice range: every prompt is in view, " +
           "and the neck past them is dimmed. Change them with − / + and the neck bar at the top. " +
