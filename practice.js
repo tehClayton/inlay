@@ -13,7 +13,7 @@
 import { $, h, fill, label, say, openPanel, closePanel, isOpen } from "./ui.js";
 import {
   DRILLS, DRILL_KINDS, candidates, makePrompt, promptText, isRight, createScore, scoreText,
-  wholeNeck, findsAll, usesNotes, answerName, ALL_INTERVALS, needed,
+  wholeNeck, findsAll, usesNotes, answerName, ALL_INTERVALS, needed, naming, DEGREE_LABELS,
 } from "./drills.js";
 import { fretRange, stringNumber, pitchAt } from "./instrument.js";
 import { noteName, parseNote, pitchClass, INTERVALS, CHORDS, SCALES } from "./theory.js";
@@ -74,13 +74,13 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     // roots, and its answers are spelled from it.
     if (prompt.root) board.mark(prompt.root, "root", noteName(prompt.rootPc, pref()));
     const answer = m => answerName(prompt, pref(), pitchClass(pitchAt(inst, m.string, m.fret)));
-    if (prompt.kind === "name"){
+    if (naming(prompt.kind)){
       board.mark(prompt.pos, revealed ? "target" : (state === "between" ? "true" : "target"),
-                 revealed || state === "between" ? noteName(prompt.pc, pref()) : "?");
+                 revealed || state === "between" ? answerName(prompt, pref()) : "?");
     }
     for (const f of found) board.mark(f, "true", answer(f));
     for (const m of misses) board.mark(m, "miss", name(m));
-    if (revealed && prompt.kind !== "name"){
+    if (revealed && !naming(prompt.kind)){
       for (const t of prompt.targets) if (!found.some(f => f.string === t.string && f.fret === t.fret)){
         board.mark(t, "target", answer(t));
       }
@@ -89,20 +89,23 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
 
   function renderAnswers(){
     const row = $("answers");
-    const show = running && prompt && prompt.kind === "name";
+    const show = running && prompt && naming(prompt.kind);
     row.hidden = !show;
     if (!show) return;
-    fill(row, ...Array.from({ length: 12 }, (_, pc) => {
+    // Note names, or degrees above the root; either way twelve, valued 0–11.
+    const degrees = prompt.kind === "nameInterval";
+    const want = degrees ? prompt.degree : prompt.pc;
+    fill(row, ...Array.from({ length: 12 }, (_, v) => {
       let cls = "ans";
       if (state !== "asking" && chosen !== null){
-        if (pc === prompt.pc) cls += " right";
-        else if (pc === chosen) cls += " wrong";
-      } else if (pending && pending.pc === pc) cls += " pending";   // typed, waiting for ♯ or ♭
+        if (v === want) cls += " right";
+        else if (v === chosen) cls += " wrong";
+      } else if (pending && pending.value === v) cls += " pending";   // typed, waiting for more
       // pointerdown for the time; click for a keyboard's Enter or Space. After
       // the first, the prompt has moved on, so one press can't answer twice.
-      return h("button", { class: cls, type: "button", "data-pc": String(pc),
-        onpointerdown: e => { e.preventDefault(); answerNote(pc, e); },
-        onclick: e => answerNote(pc, e) }, noteName(pc, pref()));
+      return h("button", { class: cls, type: "button", "data-value": String(v),
+        onpointerdown: e => { e.preventDefault(); answerNote(v, e); },
+        onclick: e => answerNote(v, e) }, degrees ? DEGREE_LABELS[v] : noteName(v, pref()));
     }));
   }
 
@@ -116,7 +119,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     if (running && prompt){
       // Which fret is marked is plain to see; a screen reader has to be told.
       fill($("prompt"), h("b", {}, promptText(prompt, getInst(), pref(), found.length)),
-        prompt.kind === "name" ? h("span", { class: "sr" }, `: ${where(getInst(), prompt.pos)}`) : null,
+        naming(prompt.kind) ? h("span", { class: "sr" }, `: ${where(getInst(), prompt.pos)}`) : null,
         prompt.root ? h("span", { class: "sr" }, `, the root at ${where(getInst(), prompt.root)}`) : null);
     }
   }
@@ -177,7 +180,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
   /* A tap on the board while a run is on. In an in-view drill, a tap on the
      dimmed neck past the window is neither an answer nor a miss. */
   function tap(pos, e){
-    if (!running || state !== "asking" || prompt.kind === "name") return;
+    if (!running || state !== "asking" || naming(prompt.kind)) return;
     if (!wholeNeck(prompt.kind)){
       const [a, b] = windowRange();
       if (pos.fret < a || pos.fret > b) return;
@@ -228,18 +231,20 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     }
   }
 
-  /* Naming: right or wrong, it's about the marked fret. */
-  function answerNote(pc, e){
+  /* Naming: right or wrong, it's about the marked fret. `value` is a pitch
+     class, or for intervals a degree, 0–11. */
+  function answerNote(value, e){
     if (!running || state !== "asking") return;
     clearPending();
-    chosen = pc;
-    const ms = since(e), ok = isRight(prompt, pc);
+    chosen = value;
+    const ms = since(e), ok = isRight(prompt, value);
     recorder.add(prompt.pos, ok, ms);
+    const it = answerName(prompt, pref());
     if (ok){
-      announce(`Right: ${noteName(prompt.pc, pref())}.`);
+      announce(`Right: ${it}.`);
       right(ms);
     } else {
-      announce(`No: it's ${noteName(prompt.pc, pref())}. Press Space to go on.`);
+      announce(`No: it's ${it}. Press Space to go on.`);
       wrong(ms);
     }
   }
@@ -248,30 +253,51 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
      The letter waits a moment for one, then counts as natural; Enter doesn't
      wait. It's timed from the letter, so pausing for the accidental costs
      nothing. A lower-case b straight after a letter is a flat; otherwise
-     it's the note B. */
+     it's the note B.
+
+     An interval is written the other way round, as players write degrees:
+     a "b" or "#" first if it has one, then the number, 1–7. It's answered
+     on the number, timed from the first key. */
   let pending = null, pendingTimer = 0;
   function clearPending(){ clearTimeout(pendingTimer); pending = null; }
   function commit(){
-    if (!pending) return;
-    const { pc, at } = pending;
+    if (!pending || pending.value == null) return;
+    const { value, at } = pending;
     clearPending();
-    answerNote(pc, { timeStamp: at });
+    answerNote(value, { timeStamp: at });
   }
+  const MAJOR = [0, 2, 4, 5, 7, 9, 11];
   addEventListener("keydown", e => {
-    if (!running || state !== "asking" || !prompt || prompt.kind !== "name") return;
+    if (!running || state !== "asking" || !prompt || !naming(prompt.kind)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target instanceof Element && e.target.closest("input, textarea, select, .settings")) return;
     const k = e.key;
+    if (prompt.kind === "nameInterval"){
+      if (k === "b" || k === "#"){
+        e.preventDefault();
+        clearPending();
+        pending = { shift: k === "#" ? 1 : -1, value: null, at: e.timeStamp };
+        return;
+      }
+      if (/^[1-7]$/.test(k)){
+        e.preventDefault();
+        const at = pending ? pending.at : e.timeStamp;
+        const value = pitchClass(MAJOR[Number(k) - 1] + (pending ? pending.shift : 0));
+        clearPending();
+        answerNote(value, { timeStamp: at });
+      }
+      return;
+    }
     let text = null;
     if (pending && (k === "#" || k === "b")) text = pending.letter + k;
     else if (/^[a-g]$/i.test(k)) text = k.toUpperCase();
     else if (pending && k === "Enter"){ e.preventDefault(); commit(); return; }
     if (!text) return;
     e.preventDefault();
-    const pc = parseNote(text);
-    if (text.length === 2){ pending.pc = pc; commit(); return; }
+    const value = parseNote(text);
+    if (text.length === 2){ pending.value = value; commit(); return; }
     clearPending();
-    pending = { letter: text, pc, at: e.timeStamp };
+    pending = { letter: text, value, at: e.timeStamp };
     pendingTimer = setTimeout(commit, ACCIDENTAL_MS);
     renderAnswers();
   });
@@ -404,7 +430,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     ] : null;
 
     // The root: random, or held on one note to learn its shapes.
-    const root = s.drill === "chord" || s.drill === "scale" ? [
+    const root = ["chord", "scale", "nameInterval"].includes(s.drill) ? [
       h("h2", { id: "drillRootLabel" }, "Root"),
       h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "drillRootLabel" },
         chip(s.drillRoot === null, "Random", null, () => { saveSettings({ drillRoot: null }); renderPanel(); changed(); }),

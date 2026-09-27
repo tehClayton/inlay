@@ -161,7 +161,7 @@ One run is one **session**, saved on stop.
 | **Find all on the neck** | A note name ("Every F♯ on the neck") | Tap every position of it from the nut to the last fret, moving along the neck to find the rest |
 | **Name the note** | A highlighted fret | Choose from 12 note buttons, or interval buttons when a root is set |
 | **Interval** | A highlighted root and an interval ("Major 3rd above A") | Tap the exact pitch that far above the root — not another octave of its note — anywhere it can be played inside the window |
-| **Name the interval** | A highlighted root and a marked fret | Choose from 12 interval buttons (1 ♭2 2 … 7) |
+| **Name the interval** | A highlighted root and a marked fret ("What degree of A?") | Choose from 12 degree buttons (1 ♭2 2 … 7): the marked note's degree of the root, by pitch class, in any octave, as study mode labels them. The marked note may be above or below the root — F♯ is D's 3 wherever it sits — so the prompt asks for a degree, not a distance |
 | **Chord tones** | A chord ("A minor") | Tap every chord tone in the window, any order. Only a chord whose every note is in the window is asked; it's at its best with a few frets shown |
 | **Scale** | A root and scale type ("D dorian") | Any order: tap every place in the window that plays a scale tone. Going up: each pitch in the window once, lowest to highest — any place that plays the next pitch counts, and a scale tone out of turn is a miss |
 
@@ -455,7 +455,8 @@ ground:
 - **Keyboard.** Space starts and stops a run, and Escape closes a panel or, with
   none open, stops a run; after a wrong answer, Space or Enter goes on. In naming
   drills, `A`–`G` plus `#` or `b` answer: a letter waits a moment for its
-  accidental, but is timed from the letter. The fretboard takes focus: the arrow
+  accidental, but is timed from the letter. Naming an interval, a degree is typed
+  as it's written, accidental first: `3`, `b3`, `#4`. The fretboard takes focus: the arrow
   keys move a cursor over it, and Enter or Space taps where it is, so every drill
   works without touch. The arrows step along the neck's own lines — along a string,
   or across the strings at the same fret — and each pair takes whichever line runs

@@ -5,7 +5,9 @@
    on screen, narrowed by the filters. The frets shown are the practice
    range — zoom in on frets 5–9 and every prompt is in 5–9. */
 import { pitchAt, stringNumber } from "./instrument.js";
-import { pitchClass, isNatural, noteName, INTERVALS, intervalNote, CHORDS, SCALES, tones, spell } from "./theory.js";
+import {
+  pitchClass, isNatural, noteName, degreeName, INTERVALS, intervalNote, CHORDS, SCALES, tones, spell,
+} from "./theory.js";
 
 export const DRILLS = Object.freeze({
   findAny:     { name: "Find any",             blurb: "tap the note anywhere in view" },
@@ -16,6 +18,7 @@ export const DRILLS = Object.freeze({
   interval:    { name: "Interval",             blurb: "tap the pitch an interval above the root" },
   chord:       { name: "Chord tones",          blurb: "tap every note of the chord in view" },
   scale:       { name: "Scale",                blurb: "tap the scale's notes in view, any order or up" },
+  nameInterval: { name: "Name the interval",   blurb: "say which degree of the root the marked fret is" },
 });
 export const DRILL_KINDS = Object.keys(DRILLS);
 
@@ -27,7 +30,15 @@ export const findsAll = kind => ["findAll", "findAllNeck", "chord", "scale"].inc
 
 /* The theory drills ask from a root, which can be any note, so the naturals
    filter is the note drills' alone. */
-export const usesNotes = kind => !["interval", "chord", "scale"].includes(kind);
+export const usesNotes = kind => !["interval", "chord", "scale", "nameInterval"].includes(kind);
+
+/* The drills answered with buttons, not the board: a fret is marked, and
+   you say what it is. */
+export const naming = kind => kind === "name" || kind === "nameInterval";
+
+/* What the naming drills' buttons say: note names, or the twelve degrees
+   above a root. The value of each is its place in the list, 0–11. */
+export const DEGREE_LABELS = Object.freeze(Array.from({ length: 12 }, (_, d) => degreeName(d, 0)));
 
 /* The chord and scale drills draw their types from the library. */
 const LIBRARY = { chord: CHORDS, scale: SCALES };
@@ -74,6 +85,7 @@ export function makePrompt(kind, cands, { rng = Math.random, last = null, interv
   if (kind === "interval") return intervalPrompt(cands, { rng, last, intervals });
   if (kind === "chord") return setPrompt("chord", cands, { rng, last, types: chords, root });
   if (kind === "scale") return setPrompt("scale", cands, { rng, last, types: scales, root, order });
+  if (kind === "nameInterval") return nameIntervalPrompt(cands, { rng, last, root });
   const pcs = [...new Set(cands.map(c => c.pc))];
   const build = () => {
     if (kind === "name"){
@@ -169,6 +181,34 @@ function setPrompt(kind, cands, { rng, last, types, root, order = "any" }){
   return p;
 }
 
+/* A name-the-interval prompt: a root, random unless its note is fixed, and
+   another place in view to name by its degree above the root — counted by
+   pitch class, in any octave, as study labels the neck. The degree is
+   chosen evenly among those in view, then a root and a place that make it. */
+function nameIntervalPrompt(cands, { rng, last, root }){
+  const roots = root == null ? cands : cands.filter(c => c.pc === root);
+  const byDegree = new Map();         // degree → [root, marked] pairs
+  for (const r of roots) for (const t of cands){
+    if (samePos(r, t)) continue;
+    const d = pitchClass(t.midi - r.midi);
+    if (!byDegree.has(d)) byDegree.set(d, []);
+    byDegree.get(d).push([r, t]);
+  }
+  if (!byDegree.size) return null;
+  const build = () => {
+    const degree = pick([...byDegree.keys()], rng);
+    const [r, t] = pick(byDegree.get(degree), rng);
+    return {
+      kind: "nameInterval", degree, pc: t.pc, rootPc: r.pc,
+      root: { string: r.string, fret: r.fret }, pos: { string: t.string, fret: t.fret }, targets: [t],
+      key: `nameInterval:${r.string}:${r.fret}:${t.string}:${t.fret}`,
+    };
+  };
+  let p = build();
+  for (let tries = 0; last && p.key === last.key && tries < 12; tries++) p = build();
+  return p;
+}
+
 /* How many right answers complete a find-all prompt: every target, or for
    a scale going up, every step. */
 export const needed = p => p.order === "up" ? p.steps.length : p.targets.length;
@@ -179,6 +219,7 @@ export const needed = p => p.order === "up" ? p.steps.length : p.targets.length;
    the preference. `pc` is which of a chord's or scale's notes. */
 export function answerName(p, pref, pc = p.pc){
   if (p.kind === "interval") return intervalNote(p.rootPc, p.semis, pref).name;
+  if (p.kind === "nameInterval") return DEGREE_LABELS[p.degree];
   if (LIBRARY[p.kind]) return spell(p.rootPc, LIBRARY[p.kind][p.type].formula, pref).find(n => n.pc === pc).name;
   return noteName(pc, pref);
 }
@@ -202,6 +243,9 @@ export function promptText(p, inst, pref, found = 0){
     return `Every ${note}${where}` + (found ? ` · ${found} of ${p.targets.length}` : "");
   }
   if (p.kind === "name") return "Name this note";
+  // A degree, not a distance: the marked note may be below the root, and
+  // it's that note's place in the root's key that's asked, in any octave.
+  if (p.kind === "nameInterval") return `What degree of ${noteName(p.rootPc, pref)}?`;
   if (p.kind === "interval"){
     const iv = INTERVALS.find(i => i.semis === p.semis);
     return `${iv.name[0].toUpperCase()}${iv.name.slice(1)} above ${noteName(p.rootPc, pref)}`;
@@ -214,6 +258,7 @@ export function promptText(p, inst, pref, found = 0){
    right only if it plays the next pitch. */
 export function isRight(p, answer, found = []){
   if (p.kind === "name") return pitchClass(answer) === p.pc;
+  if (p.kind === "nameInterval") return pitchClass(answer) === p.degree;
   const t = p.targets.find(t => samePos(t, answer));
   if (!t) return false;
   return p.order === "up" ? t.midi === p.steps[found.length] : true;
