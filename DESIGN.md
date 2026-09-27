@@ -45,7 +45,8 @@ Served as-is from the repo root, following millitap's layout:
 | `fretboard.js` | SVG fretboard rendering and hit-testing |
 | `drills.js` | Prompt generation, answer checking, adaptive weighting |
 | `sessions.js` | Recording a run as a session record, and adding records up |
-| `stats.js` | What the history screen shows: sessions pooled by position, note and string, and the trend's control limits. Pure functions |
+| `stats.js` | What the history screen shows: sessions pooled by position, note and string, and the trend's control limits and signals. Pure functions |
+| `charts.js` | The history screen's SVG charts |
 | `store.js` | All `localStorage` access, schema versions, migrations, export and import |
 | `backup.js`, `data.js` | Reading, checking and merging a backup file; the Export and Import buttons both pages share |
 | `app.css` | The tokens and shared controls, linked by both pages; each adds its own layout |
@@ -370,8 +371,13 @@ and optionally by drill:
 - **Fretboard heatmap:** each position coloured by typical time or miss rate, with a
   toggle between the two. It is the headline chart. Positions with too few answers
   are drawn hollow, like millitap's faint under-practised dots.
-- **Trend over sessions:** typical time and accuracy per session, as an individuals
-  control chart with moving-range limits, the same method as millitap's spread chart.
+- **Trend over sessions:** typical time (on a log scale) and accuracy per session, as
+  individuals control charts, the same method as millitap's spread chart: limits
+  three sigmas either side of the mean, sigma from the average moving range. Limits
+  appear from 8 sessions and are called provisional until 20. Points that break
+  millitap's run rules (outside the limits, eight on one side, six moving one way,
+  two of three past 2σ) are ringed, and read forward: in practice a signal is
+  usually the level moving the way you wanted.
 - **By note and by string:** bars for the 12 pitch classes and for each string, the
   analogue of millitap's "By position".
 - **Summary:** typical time, accuracy, spread, answers, sessions and time practised,

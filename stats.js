@@ -154,21 +154,88 @@ export function fmtDur(ms){
   return hh ? `${hh}:${p(mm)}:${p(ss)}` : `${mm}:${p(ss)}`;
 }
 
-/* An individuals control chart's centre line and limits, as millitap's spread
-   chart draws them: the mean, and 2.66 average moving ranges either side.
-   Points outside the limits are more than the run-to-run noise. `log` works
-   on logarithms, for times, whose noise grows with their size. Null values
-   (a session with nothing timed) are skipped; fewer than two points give no
-   limits. */
-export function limits(values, { log = false } = {}){
-  const xs = values.filter(v => v != null && Number.isFinite(v) && (!log || v > 0))
-                   .map(v => log ? Math.log(v) : v);
+/* ------------------------------------------------------- control chart */
+/* An individuals (XmR) chart, as millitap's history draws them: one point per
+   session, a centre line at the mean, and limits three sigmas either side,
+   sigma estimated from the average moving range (÷ d2 = 1.128, so the limits
+   are the familiar 2.66 average moving ranges). A point outside them is more
+   than your session-to-session noise.
+
+   Read the signals forward, not as faults: practising is trying to move the
+   level, so a signal is usually the evidence that it moved. */
+const D2 = 1.128;
+
+/* Fewer sessions than this and limits would mostly describe the noise in
+   their own estimate: the chart draws the trend alone, and says so. Below
+   SPC_FIRM they are drawn, but called provisional. */
+export const SPC_MIN = 8;
+export const SPC_FIRM = 20;
+
+/* The values a chart works in: finite, and for `log` positive and logged,
+   since times are judged by ratio and their noise grows with their size. A
+   null (a session with nothing timed) has no value and is skipped. */
+const series = (values, log) => values.map(v =>
+  v == null || !Number.isFinite(v) || (log && v <= 0) ? null : (log ? Math.log(v) : v));
+
+/* Centre line and limits, in the values' own units: { centre, lo, hi, sigma }
+   with sigma in the working (logged, for `log`) units. Null with fewer than
+   two values, or when they never move, which would collapse the limits onto
+   the centre and flag every point that ever did. `range` clamps the limits
+   to what the quantity can be (accuracy lives in [0, 1]). */
+export function limits(values, { log = false, range = null } = {}){
+  const xs = series(values, log).filter(v => v != null);
   if (xs.length < 2) return null;
   const centre = xs.reduce((a, b) => a + b, 0) / xs.length;
   let mr = 0;
   for (let i = 1; i < xs.length; i++) mr += Math.abs(xs[i] - xs[i - 1]);
-  mr /= xs.length - 1;
-  const [lo, hi] = [centre - 2.66 * mr, centre + 2.66 * mr];
-  return log ? { centre: Math.exp(centre), lo: Math.exp(lo), hi: Math.exp(hi) }
-             : { centre, lo, hi };
+  const sigma = mr / (xs.length - 1) / D2;
+  if (!(sigma > 0)) return null;
+  const back = x => log ? Math.exp(x) : x;
+  let lo = back(centre - 3 * sigma), hi = back(centre + 3 * sigma);
+  if (range){ lo = Math.max(range[0], lo); hi = Math.min(range[1], hi); }
+  return { centre: back(centre), lo, hi, sigma };
+}
+
+/* The run rules worth reading in practice, a subset of Western Electric's:
+     1  a point outside the limits: this session wasn't like the others
+     2  eight in a row on one side: the level has moved, and stayed moved
+     3  six in a row climbing or falling (five steps): it's moving now
+     5  two of three past two sigmas on one side: too big a shift to sit on
+   Each is flagged on the point that completes it. Returns an array of rule
+   numbers per value; null values get [] and are stepped over, so a session
+   with nothing timed doesn't break a run. */
+export const RULES = {
+  1: "outside the limits",
+  2: "eight in a row on one side",
+  3: "six in a row moving one way",
+  5: "two of three past 2σ",
+};
+export function signals(values, { log = false } = {}){
+  const all = series(values, log);
+  const flags = values.map(() => []);
+  const idx = all.map((v, i) => v == null ? -1 : i).filter(i => i >= 0);
+  const xs = idx.map(i => all[i]);
+  const k = limits(values, { log });
+  if (!k) return flags;
+  const centre = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const z = j => (xs[j] - centre) / k.sigma;
+  const flag = (j, rule) => flags[idx[j]].push(rule);
+  for (let j = 0; j < xs.length; j++){
+    if (Math.abs(z(j)) > 3) flag(j, 1);
+    if (j >= 7){
+      const side = Math.sign(z(j));
+      if (side && [...Array(8)].every((_, n) => Math.sign(z(j - n)) === side)) flag(j, 2);
+    }
+    if (j >= 5){
+      const steps = [...Array(5)].map((_, n) => xs[j - n] - xs[j - n - 1]);
+      if (steps.every(d => d > 0) || steps.every(d => d < 0)) flag(j, 3);
+    }
+    if (j >= 2){
+      for (const side of [1, -1]){
+        const far = [j - 2, j - 1, j].filter(n => side * z(n) > 2);
+        if (far.length >= 2 && far.at(-1) === j){ flag(j, 5); break; }
+      }
+    }
+  }
+  return flags;
 }
