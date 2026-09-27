@@ -378,8 +378,11 @@ and optionally by drill:
   millitap's run rules (outside the limits, eight on one side, six moving one way,
   two of three past 2σ) are ringed, and read forward: in practice a signal is
   usually the level moving the way you wanted.
-- **By note and by string:** bars for the 12 pitch classes and for each string, the
-  analogue of millitap's "By position".
+- **By note and by string:** a column for each of the 12 pitch classes and for each
+  string, the analogue of millitap's "By position": a dot at the typical time and a
+  whisker for the spread, on a log scale, against a dashed line at the typical time
+  overall. Accuracy is written under each column, in rose when it is more than ten
+  points below the overall. A note never asked shows a dash, not a weakness.
 - **Summary:** typical time, accuracy, spread, answers, sessions and time practised,
   for what the filters select.
 - **Session table:** date, drill, duration, answers, accuracy and typical time, newest

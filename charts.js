@@ -131,6 +131,74 @@ export function controlChart(host, { points, log = false, range = null, fmt, axi
   return { limits: k, signals: signalling };
 }
 
+/* ------------------------------------------------------ by category */
+/* One column per category — a note, a string — as millitap's "by position"
+   draws its beats: a dot at the typical time and a whisker for the spread
+   (typical ÷ spread to typical × spread, the band most answers fall in), on
+   a log scale. A dashed line across is the typical time over everything,
+   so a slow note stands out against your own average rather than against
+   nothing. Accuracy is written under each column, in rose when it is well
+   below the overall.
+     items   [{ label, typicalMs, spread, accuracy, answers, thin, parts }]
+             answers 0 is a category never asked: a dash, not a weakness
+     overall { typicalMs, accuracy }
+     axis    a time as the axis puts it
+   */
+export function spreadChart(host, { items, overall, axis, name, tip, height = 200 }){
+  host.replaceChildren();
+  const timed = items.filter(i => i.typicalMs != null);
+  if (!timed.length) return;
+
+  const w = Math.max(260, host.clientWidth || 300);
+  const f = { L: 44, R: w - 10, T: 10, B: height - 38 };
+  const svg = el("svg", { viewBox: `0 0 ${w} ${height}`, width: w, height, role: "img" });
+
+  const ends = timed.flatMap(i => [i.typicalMs / i.spread, i.typicalMs * i.spread]);
+  if (overall.typicalMs != null) ends.push(overall.typicalMs);
+  let a = Math.log(Math.min(...ends)), b = Math.log(Math.max(...ends));
+  if (a === b){ a -= 0.2; b += 0.2; }
+  const room = (b - a) * 0.08;
+  a -= room; b += room;
+  const Y = v => f.B - (Math.log(v) - a) / (b - a) * (f.B - f.T);
+  const col = (f.R - f.L) / items.length;
+  const X = i => f.L + (i + 0.5) * col;
+
+  for (const v of logTicks(Math.exp(a), Math.exp(b))){
+    svg.append(el("line", { class: "gl", x1: f.L, y1: Y(v), x2: f.R, y2: Y(v) }),
+               el("text", { class: "ax", x: f.L - 6, y: Y(v) + 3, "text-anchor": "end" }, axis(v)));
+  }
+  if (overall.typicalMs != null){
+    const y = Y(overall.typicalMs);
+    svg.append(el("line", { class: "lim", x1: f.L, y1: y, x2: f.R, y2: y }));
+  }
+
+  items.forEach((it, i) => {
+    const x = X(i);
+    svg.append(el("text", { class: "ax cat", x, y: f.B + 14, "text-anchor": "middle" }, it.label));
+    // Accuracy well below your own overall is worth the one colour this
+    // chart spends: more than ten points under it.
+    const weak = it.accuracy != null && overall.accuracy != null && it.accuracy < overall.accuracy - 0.1;
+    svg.append(el("text", { class: "ax acc" + (weak ? " weak" : ""), x, y: f.B + 28, "text-anchor": "middle" },
+      it.accuracy == null ? "—" : `${Math.round(it.accuracy * 100)}%`));
+    if (it.typicalMs != null){
+      const y = Y(it.typicalMs);
+      svg.append(el("line", { class: "whisk", x1: x, y1: Y(it.typicalMs * it.spread), x2: x, y2: Y(it.typicalMs / it.spread) }));
+      svg.append(el("circle", { class: "pt" + (it.thin ? " thin" : ""), cx: x, cy: y, r: 4.5 }));
+    }
+    if (it.answers && tip){
+      // The whole column is the target: a finger needn't find the dot.
+      const hit = el("rect", { x: x - col / 2, y: f.T, width: col, height: f.B + 30 - f.T, fill: "transparent" });
+      svg.append(hit);
+      bindTip(tip, hit, it.parts);
+    }
+  });
+
+  const slowest = timed.reduce((s, i) => i.typicalMs > s.typicalMs ? i : s);
+  svg.setAttribute("aria-label", `${name}: slowest is ${slowest.label} at ${axis(slowest.typicalMs)}` +
+    (overall.typicalMs != null ? `, against ${axis(overall.typicalMs)} overall` : ""));
+  host.append(svg);
+}
+
 /* An HTML element with text, for the tip. */
 function el2(tag, text){
   const e = document.createElement(tag);

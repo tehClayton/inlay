@@ -85,6 +85,17 @@
   .sigring{fill:none;stroke:var(--miss);stroke-width:1.75;stroke-opacity:.9}
   .legend .sig{display:inline-block;width:10px;height:10px;border-radius:50%;
     border:2px solid var(--miss);vertical-align:-1px}
+  .whisk{stroke:var(--ink-dim);stroke-width:4;stroke-opacity:.34;stroke-linecap:round}
+  .pt.thin{fill:var(--panel);stroke:var(--ink-dim);stroke-width:1.5}
+  .ax.cat{fill:var(--ink-dim);font-size:10px}
+  .ax.acc.weak{fill:var(--miss)}
+  .pair{display:grid;grid-template-columns:3fr 2fr;gap:var(--sp4)}
+  .pair h3{font-size:10px;font-weight:500;color:var(--ink-mute);margin-bottom:4px}
+  @media (max-width:640px){ .pair{grid-template-columns:1fr} }
+  .legend .dotk{display:inline-block;width:9px;height:9px;border-radius:50%;
+    background:var(--ink-dim);vertical-align:-1px}
+  .legend .dotk.thin{background:none;border:1.5px solid var(--ink-dim)}
+  .legend .weak{color:var(--miss)}
   #tip{position:fixed;z-index:40;pointer-events:none;display:grid;gap:2px;max-width:260px;
     background:var(--panel-hi);border:1px solid var(--rule);border-radius:var(--r1);
     padding:7px 10px;font-size:11px;color:var(--ink-dim);box-shadow:0 10px 28px rgba(0,0,0,.5)}
@@ -163,6 +174,17 @@
         <!-- How it's going, session by session. The limits are your own
              session-to-session noise: a ringed point is more than that, and
              in practice usually the good kind. -->
+        <!-- Which notes, and which strings, are the slow or shaky ones:
+             the heatmap's places, added up the two ways players think. -->
+        <section class="card">
+          <h2>By note and by string <span class="hint">dot is typical time, line is spread · dashed is overall</span></h2>
+          <div class="pair">
+            <div><h3>Notes</h3><div class="chart" id="cNote"></div></div>
+            <div><h3>Strings</h3><div class="chart" id="cString"></div></div>
+          </div>
+          <div class="legend" id="lCat"></div>
+        </section>
+
         <section class="card">
           <h2>Typical time over sessions <span class="hint">lower is quicker · ringed points are signals</span></h2>
           <div class="chart" id="cTime"></div>
@@ -221,13 +243,13 @@ import { $, h, fill, say, watchForUpdates } from "./ui.js";
 import { loadInstruments, loadSessions, loadSettings, deleteAllData } from "./store.js";
 import { wireBackup, dataNote } from "./data.js";
 import {
-  select, drillsOf, overall, trend, byPosition, heat, ramp, MIN_HEAT, SPC_MIN, SPC_FIRM,
-  fmtPct, fmtTime, fmtSpread, fmtDur,
+  select, drillsOf, overall, trend, byPosition, byNote, byString, heat, ramp,
+  MIN_HEAT, SPC_MIN, SPC_FIRM, fmtPct, fmtTime, fmtSpread, fmtDur,
 } from "./stats.js";
-import { controlChart } from "./charts.js";
+import { controlChart, spreadChart } from "./charts.js";
 import { createFretboard } from "./fretboard.js";
-import { VIEW_PRESETS, pitchAt } from "./instrument.js";
-import { noteName } from "./theory.js";
+import { VIEW_PRESETS, pitchAt, stringNumber } from "./instrument.js";
+import { noteName, pitchClass } from "./theory.js";
 import { where } from "./practice.js";
 
 let instruments = [], sessions = [];
@@ -295,8 +317,47 @@ function render(){
   $("report").hidden = false;
   renderTiles(mine);
   renderHeat(inst, mine);
+  renderBreakdowns(inst, mine);
   renderTrends(mine);
   renderTable(mine);
+}
+
+/* Times as an axis puts them: "2 s", "1.5 s". */
+const secs = ms => `${+(ms / 1000).toFixed(2)} s`;
+
+/* ----------------------------------------------------------- breakdowns */
+function renderBreakdowns(inst, mine){
+  const all = overall(mine);
+  const pref = notePref();
+  const item = (label, heading, t) => ({
+    label, typicalMs: t.typicalMs, spread: t.spread, accuracy: t.accuracy, answers: t.answers,
+    thin: t.answers > 0 && t.answers < MIN_HEAT,
+    parts: () => [
+      h("b", {}, heading),
+      h("span", {}, `typical ${fmtTime(t.typicalMs)} · spread ${fmtSpread(t.typicalMs == null ? null : t.spread)}`),
+      h("span", {}, `${fmtPct(t.accuracy)} right · ${t.answers} answer${t.answers === 1 ? "" : "s"}`),
+    ],
+  });
+  // Notes from C, the way a keyboard or a chart of them runs.
+  spreadChart($("cNote"), {
+    name: "By note", axis: secs, overall: all, tip: $("tip"),
+    items: byNote(mine, inst).map(n => item(noteName(n.pc, pref), noteName(n.pc, "both"), n)),
+  });
+  // Strings as they sit on the neck, labelled as players count them.
+  const count = inst.strings.length;
+  spreadChart($("cString"), {
+    name: "By string", axis: secs, overall: all, tip: $("tip"),
+    items: byString(mine, inst).map(s => {
+      const num = stringNumber(s.string, count), open = noteName(pitchClass(inst.strings[s.string].open), pref);
+      return item(`${num}`, `String ${num} (${open})`, s);
+    }),
+  });
+  fill($("lCat"),
+    h("span", { class: "dotk", "aria-hidden": "true" }), h("span", {}, "typical time"),
+    h("span", { class: "dotk thin", "aria-hidden": "true" }), h("span", {}, `fewer than ${MIN_HEAT} answers`),
+    h("span", {}, "· the percentage under each is accuracy,"),
+    h("span", { class: "weak" }, "rose"), h("span", {}, "when well below your overall"),
+    h("span", {}, `(${fmtPct(all.accuracy)})`));
 }
 
 /* --------------------------------------------------------------- trends */
@@ -308,7 +369,7 @@ function renderTrends(mine){
   ];
   const time = controlChart($("cTime"), {
     name: "Typical time", log: true, fmt: fmtTime, tip: $("tip"),
-    axis: ms => `${+(ms / 1000).toFixed(2)} s`,
+    axis: secs,
     points: pts.map(p => ({ t: p.t, value: p.typicalMs, parts: parts(p, `typical ${fmtTime(p.typicalMs)}`) })),
   });
   const acc = controlChart($("cAcc"), {
