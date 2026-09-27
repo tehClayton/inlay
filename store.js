@@ -109,6 +109,41 @@ export function saveSession(s){
   }
 }
 
+/* ------------------------------------------------------------- your data */
+
+/* Everything a backup carries. */
+export const loadAll = () => ({ instruments: loadInstruments(), sessions: loadSessions() });
+
+/* Writes a merged import: instruments, then sessions. If the sessions don't
+   fit, the instruments are put back as they were, so an import never half
+   happens. Returns true if both were written. */
+export function writeAll({ instruments, sessions }){
+  const before = (() => { try { return localStorage.getItem(KEYS.instruments); } catch { return null; } })();
+  if (!write(KEYS.instruments, instruments)) return false;
+  if (write(KEYS.sessions, sessions)) return true;
+  try {
+    if (before === null) localStorage.removeItem(KEYS.instruments);
+    else localStorage.setItem(KEYS.instruments, before);
+  } catch { /* storage refusing even that: nothing more to do */ }
+  return false;
+}
+
+/* Deletes everything inlay has stored, and nothing else: millitap shares
+   this storage, so this is every "inlay." key rather than clear(). */
+export function deleteAllData(){
+  try {
+    const mine = [];
+    for (let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if (k && k.startsWith("inlay.")) mine.push(k);
+    }
+    for (const k of mine) localStorage.removeItem(k);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function deleteSessionsFor(inst){
   const all = read(KEYS.sessions, null);
   if (all === null) return true;               // nothing stored, nothing to do
@@ -124,6 +159,7 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   instrument: null,      // id of the instrument last used
   drill: "findOn",       // the drill last chosen: see drills.js
   drillNotes: "all",     // all | naturals
+  lastExport: null,      // when a backup was last exported from this device, ms
 });
 
 const SETTINGS_VALID = {
@@ -131,6 +167,7 @@ const SETTINGS_VALID = {
   instrument: v => v === null || typeof v === "string",
   drill: v => DRILL_KINDS.includes(v),
   drillNotes: v => v === "all" || v === "naturals",
+  lastExport: v => v === null || (Number.isFinite(v) && v > 0),
 };
 
 /* Defaults, overlaid with whatever stored values are still valid, so a bad

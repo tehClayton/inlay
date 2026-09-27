@@ -4,6 +4,7 @@ import {
   KEYS, loadInstruments, saveInstrument, deleteInstrument,
   loadSettings, saveSettings, SETTINGS_DEFAULTS,
   loadSessions, sessionsFor, saveSession, deleteSessionsFor, MAX_SESSIONS,
+  loadAll, writeAll, deleteAllData,
 } from "../store.js";
 import { newInstrument, VIEW_PRESETS } from "../instrument.js";
 import { createRecorder } from "../sessions.js";
@@ -19,6 +20,8 @@ function session(inst, t, answers = 5){
    blocked or full store does: every access throws. */
 class FakeStorage {
   constructor(){ this.m = new Map(); this.broken = false; this.limit = Infinity; }
+  get length(){ if (this.broken) throw new Error("blocked"); return this.m.size; }
+  key(i){ if (this.broken) throw new Error("blocked"); return [...this.m.keys()][i] ?? null; }
   getItem(k){ if (this.broken) throw new Error("blocked"); return this.m.has(k) ? this.m.get(k) : null; }
   setItem(k, v){
     if (this.broken) throw new Error("blocked");
@@ -171,6 +174,43 @@ test("deleting an instrument deletes its sessions, and only its", () => {
   assert.ok(deleteSessionsFor("nobody"));
 });
 
+test("writeAll writes instruments and sessions together", () => {
+  const a = newInstrument();
+  assert.ok(writeAll({ instruments: [a], sessions: [session(a, 1), session(a, 2)] }));
+  const all = loadAll();
+  assert.deepEqual(all.instruments.map(i => i.id), [a.id]);
+  assert.equal(all.sessions.length, 2);
+});
+
+test("if the sessions don't fit, the instruments are put back: no half import", () => {
+  const a = newInstrument({ name: "Here" }), b = newInstrument({ name: "Incoming" });
+  saveInstrument(a);
+  const before = store.m.get(KEYS.instruments);
+  // Room for a second instrument, not for the sessions that come with it.
+  store.limit = before.length * 2 + 50;
+  const many = Array.from({ length: 30 }, (_, i) => session(b, i + 1));
+  assert.equal(writeAll({ instruments: [a, b], sessions: many }), false);
+  assert.equal(store.m.get(KEYS.instruments), before);
+  assert.deepEqual(loadInstruments().map(i => i.name), ["Here"]);
+});
+
+test("delete all removes every inlay key and leaves millitap's alone", () => {
+  saveInstrument(newInstrument());
+  saveSettings({ notePref: "flat" });
+  store.setItem("millitap.sessions.v1", "[]");
+  store.setItem("something.else", "x");
+  assert.ok(deleteAllData());
+  assert.deepEqual([...store.m.keys()].sort(), ["millitap.sessions.v1", "something.else"]);
+});
+
+test("the last export date is a setting, null until the first", () => {
+  assert.equal(loadSettings().lastExport, null);
+  saveSettings({ lastExport: 1790000000000 });
+  assert.equal(loadSettings().lastExport, 1790000000000);
+  saveSettings({ lastExport: "yesterday" });
+  assert.equal(loadSettings().lastExport, 1790000000000);
+});
+
 test("blocked storage reads empty and reports failed writes", () => {
   store.broken = true;
   assert.deepEqual(loadInstruments(), []);
@@ -180,4 +220,6 @@ test("blocked storage reads empty and reports failed writes", () => {
   assert.equal(deleteInstrument("x"), false);
   assert.deepEqual(loadSessions(), []);
   assert.deepEqual(saveSession(session(newInstrument(), 1)), { ok: false, pruned: 0 });
+  assert.equal(writeAll({ instruments: [], sessions: [] }), false);
+  assert.equal(deleteAllData(), false);
 });

@@ -240,6 +240,13 @@
   .actions .btns{display:flex;align-items:center;gap:var(--sp2)}
   .grow{flex:1}
   .err{font-size:12px;line-height:1.5;color:var(--miss)}
+  /* Deleting everything: kept apart from the everyday buttons. */
+  .danger{display:grid;gap:var(--sp2);padding-top:var(--sp2);border-top:1px dashed var(--rule)}
+  .danger > .mini{justify-self:start}
+  .wipeask{display:grid;gap:var(--sp2)}
+  .wipeask input{max-width:160px}
+  .warnbtn{background:var(--miss);border-color:var(--miss);color:#fff;font-weight:600}
+
   /* The editor's question before retuning an instrument with history. */
   .ask{display:grid;gap:var(--sp2);padding:10px 12px;border-radius:var(--r1);
     background:rgba(255,255,255,.03);border-left:3px solid #E8A33D}   /* millitap's amber: take care */
@@ -407,6 +414,32 @@
     <div class="pick" id="notePick" role="radiogroup" aria-labelledby="npLabel"></div>
   </div>
 
+  <!-- Everything stays on this device, so a backup file is the only way to
+       keep it safe or move it. Deleting it all is set apart and asks for a
+       typed word, not just a tap. -->
+  <div class="sect">
+    <h2>Your data</h2>
+    <p class="note" id="dataNote"></p>
+    <div class="pick">
+      <button id="exportBtn" type="button">Export backup</button>
+      <button id="importBtn" type="button">Import backup</button>
+      <input id="importFile" type="file" accept=".json,application/json" hidden>
+    </div>
+    <div class="danger">
+      <button id="wipeBtn" class="mini warn" type="button" aria-expanded="false" aria-controls="wipeAsk">Delete all data…</button>
+      <div id="wipeAsk" class="wipeask" hidden>
+        <p class="note">Every instrument and all practice history on this device will be deleted.
+          Export a backup first if you might want them back.</p>
+        <label class="inline">Type <b>delete</b> to confirm
+          <input id="wipeText" type="text" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+        <div class="btns">
+          <button id="wipeCancel" type="button">Cancel</button>
+          <button id="wipeGo" class="warnbtn" type="button" disabled>Delete everything</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Metadata, not a donation bar, and in millitap's order: lowest commitment
        first, so a one-off tip reads before a recurring one. What each link is
        for is said on hover, not in the line. -->
@@ -436,8 +469,9 @@ import {
 } from "./ui.js";
 import {
   loadInstruments, saveInstrument, deleteInstrument, loadSettings, saveSettings,
-  saveSession, sessionsFor,
+  saveSession, sessionsFor, loadAll, writeAll, deleteAllData, MAX_SESSIONS,
 } from "./store.js";
+import { makeBackup, readBackup, mergeBackup, backupFilename, importSummary } from "./backup.js";
 import { summarize, MIN_ANSWERS } from "./sessions.js";
 import { newInstrument, summary, pitchAt, stringNumber } from "./instrument.js";
 import { noteName, pitchName } from "./theory.js";
@@ -656,7 +690,75 @@ function renderSettings(){
 }
 
 label($("gear"), "Settings");
-panelButton($("gear"), $("settings"), renderSettings);
+panelButton($("gear"), $("settings"), () => { renderSettings(); renderData(); });
+
+/* ------------------------------------------------------------ your data */
+
+/* "3 days ago", or a date once it's been a while. */
+function ago(ms){
+  const days = Math.floor((Date.now() - ms) / 86400000);
+  if (days < 1) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+function renderData(){
+  const { instruments: is, sessions: ss } = loadAll();
+  const what = `${is.length} instrument${is.length === 1 ? "" : "s"}, ${ss.length} practice session${ss.length === 1 ? "" : "s"}`;
+  const last = settings.lastExport ? `Last backup: ${ago(settings.lastExport)}.` : "Not backed up yet.";
+  $("dataNote").textContent = `Everything stays on this device: ${what}. ${last}`;
+  $("wipeAsk").hidden = true;
+  $("wipeBtn").setAttribute("aria-expanded", "false");
+  $("wipeText").value = "";
+  $("wipeGo").disabled = true;
+}
+
+/* The file is made in the page and handed to the browser to save. */
+$("exportBtn").onclick = () => {
+  const data = makeBackup(loadAll());
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+  const a = h("a", { href: url, download: backupFilename() });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  settings.lastExport = data.exported;
+  saveSettings({ lastExport: data.exported });
+  renderData();
+  say(`Backup saved: ${data.instruments.length} instruments, ${data.sessions.length} sessions.`);
+};
+
+$("importBtn").onclick = () => { $("importFile").value = ""; $("importFile").click(); };
+$("importFile").onchange = async e => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const read = readBackup(await file.text());
+  if (!read.ok){ say(read.error, 5000); return; }
+  practice.stop();
+  const merged = mergeBackup(loadAll(), read, MAX_SESSIONS);
+  if (!writeAll(merged)){ say("Couldn't import: storage is full or blocked. Nothing was changed.", 5000); return; }
+  instruments = loadInstruments();
+  if (!current() && instruments[0]) use(instruments[0]);
+  renderBoard();
+  renderData();
+  say(importSummary(merged.counts, read.skipped), 6000);
+};
+
+$("wipeBtn").onclick = () => {
+  const open = $("wipeAsk").hidden;
+  $("wipeAsk").hidden = !open;
+  $("wipeBtn").setAttribute("aria-expanded", String(open));
+  if (open) $("wipeText").focus();
+};
+$("wipeCancel").onclick = () => renderData();
+$("wipeText").oninput = e => { $("wipeGo").disabled = e.target.value.trim().toLowerCase() !== "delete"; };
+/* After deleting, the page starts over as a first visit would. */
+$("wipeGo").onclick = () => {
+  practice.stop();
+  if (!deleteAllData()){ say("Couldn't delete: this browser isn't letting inlay change its storage.", 4000); return; }
+  location.reload();
+};
 
 /* ------------------------------------------------------------- practice */
 /* The board is created when there's an instrument to draw, so the loop is
