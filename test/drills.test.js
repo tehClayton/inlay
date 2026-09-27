@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   candidates, makePrompt, promptText, isRight, createScore, scoreText, DRILL_KINDS, SLOW_MS,
-  answerName, usesNotes, ALL_INTERVALS, findsAll, needed,
+  answerName, usesNotes, ALL_INTERVALS, findsAll, needed, naming, DEGREE_LABELS,
 } from "../drills.js";
 import { newInstrument } from "../instrument.js";
 import { parsePitch, noteName } from "../theory.js";
@@ -57,6 +57,7 @@ test("every kind of prompt's targets answer it", () => {
         if (kind === "chord" || kind === "scale") assert.ok(p.tones.includes(t.pc), kind);
         else assert.equal(t.pc, p.pc, kind);
         if (kind === "name") assert.ok(isRight(p, t.midi));
+        else if (kind === "nameInterval") assert.ok(isRight(p, p.degree));
         else assert.ok(isRight(p, t), `${kind} target should be right`);
       }
     }
@@ -222,6 +223,41 @@ test("scale: only the types chosen, and only when every note is in view", () => 
   // One string, frets 0–4: five notes, too few for a seven-note scale.
   const d = candidates(guitar(), [0, 4], { strings: [0] });
   assert.equal(makePrompt("scale", d, { scales: ["major"] }), null);
+});
+
+test("name the interval: a root and another place, named by degree above it", () => {
+  const c = candidates(guitar(), [0, 5]), rng = seeded(11);
+  for (let i = 0; i < 200; i++){
+    const p = makePrompt("nameInterval", c, { rng });
+    const r = c.find(x => x.string === p.root.string && x.fret === p.root.fret);
+    const t = c.find(x => x.string === p.pos.string && x.fret === p.pos.fret);
+    assert.ok(r && t, "both places are in view");
+    assert.ok(r !== t, "never the root itself");
+    // Counted by pitch class, in any octave: below the root is still "above".
+    assert.equal(p.degree, ((t.midi - r.midi) % 12 + 12) % 12);
+    assert.ok(isRight(p, p.degree));
+    for (let d = 0; d < 12; d++) if (d !== p.degree) assert.ok(!isRight(p, d));
+  }
+  assert.ok(naming("nameInterval") && naming("name") && !naming("findAny"));
+  assert.ok(!usesNotes("nameInterval"));
+});
+
+test("name the interval: every degree comes up about as often; a fixed root holds", () => {
+  const c = candidates(guitar(), [0, 5]), rng = seeded(12);
+  const seen = new Array(12).fill(0);
+  for (let i = 0; i < 6000; i++) seen[makePrompt("nameInterval", c, { rng }).degree]++;
+  for (const n of seen) assert.ok(n > 400 && n < 600, `${n} of 6000`);
+  for (let i = 0; i < 50; i++) assert.equal(makePrompt("nameInterval", c, { rng, root: 9 }).rootPc, 9);
+});
+
+test("name the interval: the degree labels, the prompt and the answer", () => {
+  assert.deepEqual([...DEGREE_LABELS], ["1", "♭2", "2", "♭3", "3", "4", "♯4/♭5", "5", "♭6", "6", "♭7", "7"]);
+  // The A string alone, frets 0–3: from open A, fret 3 (C) is a ♭3.
+  const c = candidates(guitar(), [0, 3], { strings: [1] });
+  const p = makePrompt("nameInterval", c, { root: 9, rng: () => 0.99 });
+  assert.equal(promptText(p, guitar(), "sharp"), "How far above A?");
+  assert.equal(answerName(p, "sharp"), DEGREE_LABELS[p.degree]);
+  assert.equal(makePrompt("nameInterval", candidates(guitar(), [0, 0], { strings: [0] })), null);
 });
 
 test("find on a string: the note on that string only, both octaves in view", () => {
