@@ -18,7 +18,7 @@ export const DRILLS = Object.freeze({
   interval:    { name: "Interval",             blurb: "tap the pitch an interval above the root" },
   chord:       { name: "Chord tones",          blurb: "tap every note of the chord in view" },
   scale:       { name: "Scale",                blurb: "tap the scale's notes in view, any order or up" },
-  nameInterval: { name: "Name the interval",   blurb: "say how far the marked fret is above the root" },
+  nameInterval: { name: "Name the interval",   blurb: "say which degree of the root the marked fret is" },
 });
 export const DRILL_KINDS = Object.keys(DRILLS);
 
@@ -243,7 +243,9 @@ export function promptText(p, inst, pref, found = 0){
     return `Every ${note}${where}` + (found ? ` · ${found} of ${p.targets.length}` : "");
   }
   if (p.kind === "name") return "Name this note";
-  if (p.kind === "nameInterval") return `How far above ${noteName(p.rootPc, pref)}?`;
+  // A degree, not a distance: the marked note may be below the root, and
+  // it's that note's place in the root's key that's asked, in any octave.
+  if (p.kind === "nameInterval") return `What degree of ${noteName(p.rootPc, pref)}?`;
   if (p.kind === "interval"){
     const iv = INTERVALS.find(i => i.semis === p.semis);
     return `${iv.name[0].toUpperCase()}${iv.name.slice(1)} above ${noteName(p.rootPc, pref)}`;

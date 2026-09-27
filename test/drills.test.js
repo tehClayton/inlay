@@ -225,7 +225,7 @@ test("scale: only the types chosen, and only when every note is in view", () => 
   assert.equal(makePrompt("scale", d, { scales: ["major"] }), null);
 });
 
-test("name the interval: a root and another place, named by degree above it", () => {
+test("name the interval: a root and another place, above or below it, named as its degree", () => {
   const c = candidates(guitar(), [0, 5]), rng = seeded(11);
   for (let i = 0; i < 200; i++){
     const p = makePrompt("nameInterval", c, { rng });
@@ -255,7 +255,7 @@ test("name the interval: the degree labels, the prompt and the answer", () => {
   // The A string alone, frets 0–3: from open A, fret 3 (C) is a ♭3.
   const c = candidates(guitar(), [0, 3], { strings: [1] });
   const p = makePrompt("nameInterval", c, { root: 9, rng: () => 0.99 });
-  assert.equal(promptText(p, guitar(), "sharp"), "How far above A?");
+  assert.equal(promptText(p, guitar(), "sharp"), "What degree of A?");
   assert.equal(answerName(p, "sharp"), DEGREE_LABELS[p.degree]);
   assert.equal(makePrompt("nameInterval", candidates(guitar(), [0, 0], { strings: [0] })), null);
 });
