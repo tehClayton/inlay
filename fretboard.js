@@ -440,6 +440,13 @@ function el(tag, attrs = {}, text){
 }
 
 const points = pts => pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
+/* A polygon pulled toward its centre by fraction k, leaving a gap between
+   neighbours. */
+function inset(pts, k){
+  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+  const cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  return pts.map(([x, y]) => [x + (cx - x) * k, y + (cy - y) * k]);
+}
 const line = (cls, [[x1, y1], [x2, y2]], extra = {}) =>
   el("line", { class: cls, x1, y1, x2, y2, ...extra });
 const oval = (cls, d) => el("ellipse", { class: cls, cx: d.cx, cy: d.cy, rx: d.rx, ry: d.ry,
@@ -461,7 +468,7 @@ export function createFretboard(host, { onTap, onCursor } = {}){
   const svg = el("svg", { class: "fb", role: "application", tabindex: "0",
     "aria-roledescription": "fretboard" });
   host.replaceChildren(svg);
-  let inst = null, L = null, marks = [], dim = null, from = 0;
+  let inst = null, L = null, marks = [], dim = null, from = 0, paint = [];
   let cursor = null, focused = false;
 
   function draw(){
@@ -478,6 +485,14 @@ export function createFretboard(host, { onTap, onCursor } = {}){
     if (L.openCol) g.push(el("polygon", { class: "fb-open", points: points(L.openCol) }));
     if (L.edge) g.push(el("polygon", { class: "fb-edge", points: points(L.edge) }));
     g.push(el("polygon", { class: "fb-wood", points: points(L.wood) }));
+    // Painted cells sit on the wood, under the frets and strings, so a
+    // coloured neck still reads as a neck.
+    for (const { pos, color, hollow } of paint){
+      const c = cellOf(L, pos);
+      if (!c) continue;
+      g.push(el("polygon", { class: "fb-paint" + (hollow ? " hollow" : ""), points: points(inset(c.pts, 0.12)),
+        style: hollow ? `stroke:${color}` : `fill:${color}` }));
+    }
     for (const d of L.sideDots) g.push(oval("fb-side", d));
     for (const d of L.inlays) g.push(oval("fb-inlay", d));
     for (const w of L.wires) g.push(line("fb-fret", w));
@@ -622,6 +637,9 @@ export function createFretboard(host, { onTap, onCursor } = {}){
     /* A marker on a position: kind is a class ("note", "true", "miss",
        "target"), text an optional label inside it. */
     mark(pos, kind, text){ marks.push({ pos, kind, text }); draw(); },
+    /* Colours cells: [{ pos, color, hollow }], hollow drawing only an outline.
+       Replaces any painted before; [] clears. */
+    paint(cells){ paint = cells; draw(); },
     clearMarks(){ marks = []; draw(); },
     /* The current layout, for whoever needs its measurements. */
     get layout(){ return L; },

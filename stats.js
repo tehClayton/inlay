@@ -90,6 +90,54 @@ export const trend = sessions => sessions.map(s => ({
   t: s.t, key: s.key, label: s.label, dur: s.dur, ...totals(Object.values(s.pos)),
 }));
 
+/* ------------------------------------------------------------- heatmap */
+
+/* Positions (from byPosition) as heat, 0 cool to 1 hot, for one metric:
+   "time" (typical time) or "miss" (miss rate). The scale is set by the
+   positions with enough answers to trust, so a thin spot can't stretch it:
+     time — from the fastest to the slowest, on a log scale, as times are
+            judged by ratio: 1 s to 2 s is as big a step as 2 s to 4 s;
+     miss — from none missed to the worst miss rate, but at least 20%, so a
+            neck with a handful of slips isn't painted as if it were on fire.
+   Thin positions are placed on the same scale, clamped, and marked hollow;
+   one with nothing to show for the metric (every answer missed, so no time)
+   gets t null. Returns { cells: [{ string, fret, value, t, hollow }], lo, hi }. */
+export const MIN_MISS_SCALE = 0.2;
+export function heat(positions, metric){
+  const valueOf = p => metric === "time" ? p.typicalMs : (p.accuracy == null ? null : 1 - p.accuracy);
+  const trusted = positions.filter(p => !p.thin).map(valueOf).filter(v => v != null);
+  let lo, hi;
+  if (metric === "time"){
+    lo = trusted.length ? Math.min(...trusted) : null;
+    hi = trusted.length ? Math.max(...trusted) : null;
+  } else {
+    lo = 0;
+    hi = Math.max(MIN_MISS_SCALE, ...trusted);
+  }
+  const scale = v => {
+    if (v == null || lo == null) return null;
+    if (hi === lo) return metric === "time" ? 0.5 : 0;
+    const t = metric === "time" ? Math.log(v / lo) / Math.log(hi / lo) : (v - lo) / (hi - lo);
+    return Math.max(0, Math.min(1, t));
+  };
+  const cells = positions.map(p => {
+    const value = valueOf(p);
+    return { string: p.string, fret: p.fret, value, t: scale(value), hollow: p.thin || value == null };
+  });
+  return { cells, lo, hi };
+}
+
+/* The heatmap's colour for t: one ramp from the raised slate of the page's
+   controls, which reads as "nothing wrong", to millitap's amber, which reads
+   as "look here". Null is muted ink: answered, but nothing to rate. */
+const COOL = [0x33, 0x41, 0x4F], WARM = [0xE8, 0xA3, 0x3D];
+export function ramp(t){
+  if (t == null) return "#66788C";
+  const k = Math.max(0, Math.min(1, t));
+  const hex = COOL.map((c, i) => Math.round(c + (WARM[i] - c) * k).toString(16).padStart(2, "0"));
+  return `#${hex.join("")}`;
+}
+
 /* ---------------------------------------------------------- formatting */
 /* Numbers as the history screen writes them. A dash where there's nothing
    to say, never a 0 that looks like a result. */

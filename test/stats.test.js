@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   select, drillsOf, byPosition, byNote, byString, overall, trend, limits, MIN_HEAT,
-  fmtPct, fmtTime, fmtSpread, fmtDur,
+  fmtPct, fmtTime, fmtSpread, fmtDur, heat, ramp, MIN_MISS_SCALE,
 } from "../stats.js";
 import { createRecorder, summarize } from "../sessions.js";
 import { newInstrument } from "../instrument.js";
@@ -134,4 +134,55 @@ test("formatting: a dash for nothing, never a zero that looks like a result", ()
   assert.equal(fmtDur(42400), "0:42");
   assert.equal(fmtDur(725000), "12:05");
   assert.equal(fmtDur(3723000), "1:02:03");
+});
+
+const P = (string, fret, typicalMs, accuracy, thin = false) =>
+  ({ string, fret, typicalMs, accuracy, thin, answers: thin ? 1 : 10 });
+
+test("heat by time: fastest to slowest on a log scale", () => {
+  const { cells, lo, hi } = heat([P(0, 1, 1000, 1), P(0, 2, 2000, 1), P(0, 3, 4000, 1)], "time");
+  assert.equal(lo, 1000);
+  assert.equal(hi, 4000);
+  assert.deepEqual(cells.map(c => c.t), [0, 0.5, 1]);
+  assert.ok(cells.every(c => !c.hollow));
+});
+
+test("heat: thin positions don't set the scale, and are hollow and clamped", () => {
+  const { cells, hi } = heat([P(0, 1, 1000, 1), P(0, 2, 2000, 1), P(0, 3, 9000, 1, true)], "time");
+  assert.equal(hi, 2000);
+  assert.equal(cells[2].t, 1);
+  assert.equal(cells[2].hollow, true);
+});
+
+test("heat by miss rate: from none missed, to at least the minimum scale", () => {
+  const few = heat([P(0, 1, 1000, 1), P(0, 2, 1000, 0.9)], "miss");
+  assert.equal(few.hi, MIN_MISS_SCALE);
+  assert.ok(Math.abs(few.cells[1].t - 0.1 / MIN_MISS_SCALE) < 1e-9);
+  assert.equal(few.cells[0].t, 0);
+  const many = heat([P(0, 1, 1000, 1), P(0, 2, 1000, 0.5)], "miss");
+  assert.equal(many.hi, 0.5);
+  assert.equal(many.cells[1].t, 1);
+});
+
+test("heat: a spot with no time to show is hollow with no value", () => {
+  const { cells } = heat([P(0, 1, 1000, 1), P(0, 2, null, 0)], "time");
+  assert.equal(cells[1].t, null);
+  assert.equal(cells[1].hollow, true);
+  // The same spot has a miss rate, and a full one.
+  assert.equal(heat([P(0, 1, 1000, 1), P(0, 2, null, 0)], "miss").cells[1].t, 1);
+});
+
+test("heat: one trusted time sits mid-scale; nothing trusted gives no scale", () => {
+  assert.equal(heat([P(0, 1, 1500, 1)], "time").cells[0].t, 0.5);
+  const none = heat([P(0, 1, 1500, 1, true)], "time");
+  assert.equal(none.lo, null);
+  assert.equal(none.cells[0].t, null);
+});
+
+test("ramp: cool slate to amber, muted for nothing to rate", () => {
+  assert.equal(ramp(0), "#33414f");
+  assert.equal(ramp(1), "#e8a33d");
+  assert.equal(ramp(2), ramp(1));
+  assert.equal(ramp(null), "#66788C");
+  assert.match(ramp(0.5), /^#[0-9a-f]{6}$/);
 });
