@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { layout, cellAt, cellOf, smallestCell, readout, camera } from "../fretboard.js";
+import { layout, cellAt, cellOf, smallestCell, readout, camera, neighbour } from "../fretboard.js";
 import { newInstrument, VIEW_PRESETS, VIEW_RANGES } from "../instrument.js";
 import { parsePitch } from "../theory.js";
 
@@ -391,6 +391,69 @@ test("a banjo's short string, in and out of the window", () => {
   assert.deepEqual(win(L, 0), [12, 13, 14, 15]);
   assert.equal(L.strings[0].spike, null);
   assert.ok(L.strings[0].line);
+});
+
+/* ----------------------------------------------------- the keyboard */
+
+const R = [1, 0], Lf = [-1, 0], U = [0, -1], D = [0, 1];
+
+test("arrow keys move to the cell that way on screen: tab", () => {
+  const L = layout(guitar(), BOX);                 // nut left, low string at the bottom
+  const at = { string: 2, fret: 5 };
+  assert.deepEqual(neighbour(L, at, R), { string: 2, fret: 6 });
+  assert.deepEqual(neighbour(L, at, Lf), { string: 2, fret: 4 });
+  assert.deepEqual(neighbour(L, at, U), { string: 3, fret: 5 });   // up, away from the low string
+  assert.deepEqual(neighbour(L, at, D), { string: 1, fret: 5 });
+});
+
+test("the arrows follow the view: flipped and left-handed", () => {
+  const F = layout(guitar({ view: "flipped" }), BOX);
+  assert.deepEqual(neighbour(F, { string: 2, fret: 5 }, U), { string: 1, fret: 5 });
+  const Lh = layout(guitar({ leftHanded: true }), BOX);
+  assert.deepEqual(neighbour(Lh, { string: 2, fret: 5 }, R), { string: 2, fret: 4 });   // right is towards the nut
+});
+
+test("the arrows stay on the string, and can always cross strings, through tilt, turn and angle", () => {
+  for (const view of ["player", { tilt: 60, turn: 30, angle: 20, perspective: 1 }]){
+    const L = layout(guitar({ view }), BOX);
+    let at = { string: 3, fret: 2 };
+    for (let i = 0; i < 6; i++){
+      const next = neighbour(L, at, R);
+      assert.equal(next.string, 3, JSON.stringify(view));
+      assert.equal(next.fret, at.fret + 1);
+      at = next;
+    }
+    const up = neighbour(L, at, U), down = neighbour(L, at, D);
+    assert.ok(up && down, `${JSON.stringify(view)}: can't cross strings`);
+    assert.equal(up.fret, at.fret);
+    assert.equal(Math.abs(up.string - down.string), 2);
+  }
+});
+
+test("a neck turned upright swaps the arrows: up and down go along it", () => {
+  const L = layout(guitar({ view: { angle: 90 } }), BOX);   // headstock at the top
+  const at = { string: 2, fret: 5 };
+  assert.deepEqual(neighbour(L, at, D), { string: 2, fret: 6 });   // down, towards the body
+  assert.deepEqual(neighbour(L, at, U), { string: 2, fret: 4 });
+  const side = neighbour(L, at, R);
+  assert.equal(side.fret, 5);
+  assert.notEqual(side.string, 2);
+});
+
+test("at an edge there's nowhere to go", () => {
+  const L = layout(guitar(), BOX);
+  assert.equal(neighbour(L, { string: 0, fret: 3 }, D), null);     // low string, at the bottom
+  assert.equal(neighbour(L, { string: 0, fret: 22 }, R), null);
+  assert.equal(neighbour(L, { string: 9, fret: 3 }, R), null);     // not a position
+});
+
+test("the arrows keep to what's on the board, not the neck off its edges", () => {
+  const g = guitar();
+  const L = layout({ ...g, view: { ...g.view, span: 5 } }, BOX, 7);
+  let at = { string: 2, fret: 7 };
+  for (let i = 0; i < 30; i++){ const n = neighbour(L, at, R); if (!n) break; at = n; }
+  const c = cellOf(L, at);
+  assert.ok(c.cx <= BOX.width, "went past the right edge");
 });
 
 /* ------------------------------------------------------------ the rest */

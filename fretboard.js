@@ -354,6 +354,47 @@ export function cellAt(L, x, y){
 export const cellOf = (L, pos) =>
   L.cells.find(c => c.string === pos.string && c.fret === pos.fret) ?? null;
 
+/* The position a keyboard arrow moves to from `pos`, `dir` a screen
+   direction: [1, 0] right, [-1, 0] left, [0, -1] up, [0, 1] down.
+
+   Moves are one step along the neck's own lines: the next or previous fret
+   on the string, or the same fret on the next or previous string. Each pair
+   of arrows takes one of those two lines, so both are always reachable:
+   left/right go along the string when it runs more across the screen than
+   the strings' crossing does (with some margin — frets win a near tie), and
+   up/down cross the strings; a neck turned to stand upright swaps them.
+   Which way a key steps follows which way that line points on screen here,
+   so the arrows go where they look like they should in every view: flipped,
+   tilted, turned, angled or left-handed. Only cells whose centres are on
+   the board count. Null at an edge. */
+export function neighbour(L, pos, [dx, dy]){
+  const cur = cellOf(L, pos);
+  if (!cur) return null;
+  const onBoard = c => c && c.cx >= 0 && c.cx <= L.width && c.cy >= 0 && c.cy <= L.height;
+  const at = (ds, df) => cellOf(L, { string: cur.string + ds, fret: cur.fret + df });
+
+  /* The screen direction of a step of +1 along a line, from whichever
+     neighbour exists. */
+  const axis = (ds, df) => {
+    const fwd = at(ds, df), back = at(-ds, -df);
+    if (fwd) return [fwd.cx - cur.cx, fwd.cy - cur.cy];
+    if (back) return [cur.cx - back.cx, cur.cy - back.cy];
+    return null;
+  };
+  const alongV = axis(0, 1), acrossV = axis(1, 0);
+  const across = v => (v ? Math.abs(v[0]) / Math.hypot(v[0], v[1]) : 0);   // how horizontal
+  const fretsSideways = !acrossV || (alongV && across(alongV) + 0.3 >= across(acrossV));
+
+  const horizontal = dx !== 0;
+  const [ds, dfLine] = horizontal === fretsSideways ? [0, 1] : [1, 0];
+  const v = ds ? acrossV : alongV;
+  if (!v) return null;
+  // Step +1 along the line if it points the arrow's way on screen, else −1.
+  const sign = Math.sign(horizontal ? v[0] * dx : v[1] * dy) || 1;
+  const next = at(ds * sign, dfLine * sign);
+  return onBoard(next) ? { string: next.string, fret: next.fret } : null;
+}
+
 /* The smallest target on the neck, in pixels: what the editor warns about
    when a view makes frets too small to tap. */
 export const smallestCell = L => Math.min(...L.cells.filter(c => c.inWindow).map(c => c.size));
@@ -408,14 +449,20 @@ const oval = (cls, d) => el("ellipse", { class: cls, cx: d.cx, cy: d.cy, rx: d.r
    bass's low B down to 1px at a guitar's high E. */
 const gauge = open => Math.max(1, Math.min(3.2, 3.2 - (open - 23) * (2.2 / 41)));
 
-/* Draws `inst` into `host`, redrawing on resize. `onTap({string, fret})` fires
-   on pointerdown over a playable position — pointerdown rather than click,
-   because the drills time the answer and a click lands up to a tap's length
-   later. */
-export function createFretboard(host, { onTap } = {}){
-  const svg = el("svg", { class: "fb", role: "img" });
+/* Draws `inst` into `host`, redrawing on resize. `onTap({string, fret}, e)`
+   fires on pointerdown over a playable position — pointerdown rather than
+   click, because the drills time the answer and a click lands up to a tap's
+   length later.
+
+   The board can be used without a pointer too: it takes focus, and then a
+   cursor moves with the arrow keys and Enter or Space taps where it is.
+   `onCursor(pos)` is told where the cursor has gone, so the page can say it. */
+export function createFretboard(host, { onTap, onCursor } = {}){
+  const svg = el("svg", { class: "fb", role: "application", tabindex: "0",
+    "aria-roledescription": "fretboard" });
   host.replaceChildren(svg);
   let inst = null, L = null, marks = [], dim = null, from = 0;
+  let cursor = null, focused = false;
 
   function draw(){
     if (!inst) { svg.replaceChildren(); return; }
@@ -452,6 +499,7 @@ export function createFretboard(host, { onTap } = {}){
 
     const mg = el("g", { class: "fb-marks" });
     for (const m of marks) drawMark(mg, m);
+    if (focused && cursor) drawCursor(mg, cursor);
     g.push(mg);
     svg.replaceChildren(...g);
   }
@@ -461,17 +509,73 @@ export function createFretboard(host, { onTap } = {}){
     if (!c) return;
     const g = el("g", { class: `fb-mark ${kind}` });
     g.append(el("circle", { cx: c.cx, cy: c.cy, r: c.r }));
+    // A miss is crossed through, so right and wrong differ in shape and not
+    // only in colour.
+    if (kind === "miss"){
+      const d = c.r * 0.78;
+      g.append(el("line", { class: "x", x1: c.cx - d, y1: c.cy - d, x2: c.cx + d, y2: c.cy + d }),
+               el("line", { class: "x", x1: c.cx - d, y1: c.cy + d, x2: c.cx + d, y2: c.cy - d }));
+    }
     // Sized to the label, so "C♯/D♭" fits the same circle as "E".
     const size = Math.max(7, Math.min(c.r * 0.82, 2.6 * c.r / Math.max(1, [...(text ?? "")].length)));
     if (text) g.append(el("text", { x: c.cx, y: c.cy, "font-size": size }, text));
     parent.append(g);
   }
 
+  function drawCursor(parent, pos){
+    const c = cellOf(L, pos);
+    if (!c) return;
+    parent.append(el("polygon", { class: "fb-cursor", points: points(c.pts) }));
+  }
+
   svg.addEventListener("pointerdown", e => {
     if (!L || !onTap) return;
     const r = svg.getBoundingClientRect();
     const hit = cellAt(L, e.clientX - r.left, e.clientY - r.top);
-    if (hit){ e.preventDefault(); onTap(hit, e); }
+    if (hit){ e.preventDefault(); cursor = hit; onTap(hit, e); }
+  });
+
+  /* ------------------------------------------------------- keyboard */
+
+  /* Where the cursor starts: where it last was if that's still drawn, else
+     the middle of what's in view, on the middle string. */
+  function home(){
+    if (cursor && cellOf(L, cursor)) return cursor;
+    const inWin = L.cells.filter(c => c.inWindow);
+    const frets = [...new Set(inWin.map(c => c.fret))];
+    const f = frets[Math.floor(frets.length / 2)];
+    const col = inWin.filter(c => c.fret === f);
+    const c = col[Math.floor(col.length / 2)];
+    return c ? { string: c.string, fret: c.fret } : null;
+  }
+
+  function moveCursor(pos){
+    cursor = pos;
+    draw();
+    if (onCursor) onCursor(pos);
+  }
+
+  svg.addEventListener("focus", () => {
+    focused = true;
+    if (L) moveCursor(home());
+  });
+  svg.addEventListener("blur", () => { focused = false; draw(); });
+
+  const ARROWS = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  svg.addEventListener("keydown", e => {
+    if (!L) return;
+    if (ARROWS[e.key]){
+      e.preventDefault();
+      const next = neighbour(L, cursor ?? home(), ARROWS[e.key]);
+      if (next) moveCursor(next);
+      return;
+    }
+    if ((e.key === "Enter" || e.key === " ") && cursor && onTap){
+      // Space here taps rather than starting or stopping a run.
+      e.preventDefault();
+      e.stopPropagation();
+      onTap(cursor, e);
+    }
   });
 
   const ro = new ResizeObserver(draw);
@@ -481,7 +585,10 @@ export function createFretboard(host, { onTap } = {}){
     /* The instrument to draw; `from` is the first fret in view when it shows
        fewer than all of them, and `dim` an optional [lo, hi] of frets to
        leave bright, dimming the rest. */
-    show(next, { from: f = 0, dim: d = null } = {}){ inst = next; from = f; dim = d; marks = []; draw(); },
+    show(next, { from: f = 0, dim: d = null } = {}){
+      if (next !== inst && (!next || !inst || next.id !== inst.id)) cursor = null;   // another neck
+      inst = next; from = f; dim = d; marks = []; draw();
+    },
     /* Moves the window along the neck, keeping the marks. */
     moveTo(f){ from = f; draw(); },
     /* Frets to leave bright, [lo, hi], dimming the rest; null for none.
