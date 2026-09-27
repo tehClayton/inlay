@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   select, drillsOf, byPosition, byNote, byString, overall, trend, limits, MIN_HEAT,
+  fmtPct, fmtTime, fmtSpread, fmtDur,
 } from "../stats.js";
 import { createRecorder, summarize } from "../sessions.js";
 import { newInstrument } from "../instrument.js";
@@ -118,4 +119,19 @@ test("limits skip missing values and need two points", () => {
   assert.equal(limits([5, null]), null);
   assert.deepEqual(limits([5, null, 5]), { centre: 5, lo: 5, hi: 5 });
   assert.equal(limits([0, 1000], { log: true }), null);
+});
+
+test("formatting: a dash for nothing, never a zero that looks like a result", () => {
+  assert.equal(fmtPct(null), "—");
+  assert.equal(fmtPct(0), "0%");
+  assert.equal(fmtPct(2 / 3), "67%");
+  assert.equal(fmtTime(null), "—");
+  assert.equal(fmtTime(1234), "1.23 s");
+  assert.equal(fmtTime(12345), "12.3 s");
+  assert.equal(fmtSpread(null), "—");
+  assert.equal(fmtSpread(1.4), "×1.40");
+  assert.equal(fmtDur(0), "0:00");
+  assert.equal(fmtDur(42400), "0:42");
+  assert.equal(fmtDur(725000), "12:05");
+  assert.equal(fmtDur(3723000), "1:02:03");
 });

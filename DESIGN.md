@@ -44,7 +44,11 @@ Served as-is from the repo root, following millitap's layout:
 | `theory.js` | Pitch, spelling, intervals, the scale and chord library. Pure functions |
 | `fretboard.js` | SVG fretboard rendering and hit-testing |
 | `drills.js` | Prompt generation, answer checking, adaptive weighting |
+| `sessions.js` | Recording a run as a session record, and adding records up |
+| `stats.js` | What the history screen shows: sessions pooled by position, note and string, and the trend's control limits. Pure functions |
 | `store.js` | All `localStorage` access, schema versions, migrations, export and import |
+| `backup.js`, `data.js` | Reading, checking and merging a backup file; the Export and Import buttons both pages share |
+| `app.css` | The tokens and shared controls, linked by both pages; each adds its own layout |
 | `audio.js` | The optional plucked-string synth |
 | `ui.js` | Shared UI: modals, toasts, the settings panel, footer |
 | `sw.js` | Service worker. `VERSION` is bumped on every deploy |
@@ -312,8 +316,11 @@ it is installed to the home screen. inlay:
 
 ### Export and import
 
-All of it lives in **Settings → Your data**, which also says what's stored and when
-it was last backed up.
+As in millitap, **Export and Import are on both pages**: in Settings → Your data on
+the practice page, and in the Your data card on the history page. Both say what's
+stored and when it was last backed up. **Deleting everything is on the history page
+only**, alone at the bottom below a rule and a stretch of empty space, so it is never
+a thumb's width from Import.
 
 - **Export** writes one JSON file, `inlay-backup-YYYY-MM-DD.json`:
   `{ app: "inlay", schema: 1, exported, instruments, sessions }` (sets join it in
@@ -367,15 +374,19 @@ and optionally by drill:
   control chart with moving-range limits, the same method as millitap's spread chart.
 - **By note and by string:** bars for the 12 pitch classes and for each string, the
   analogue of millitap's "By position".
-- **Session table:** date, drill, duration, answers, accuracy and typical time.
-- **Backup:** export, import, last-export date, and the danger zone.
+- **Summary:** typical time, accuracy, spread, answers, sessions and time practised,
+  for what the filters select.
+- **Session table:** date, drill, duration, answers, accuracy and typical time, newest
+  first.
+- **Your data:** export, import and the last-export date, then the danger zone set
+  apart below it (see [Export and import](#export-and-import)).
 - **Save as PDF:** a print stylesheet that restates the tokens for paper, as
   millitap's does.
 
 ### Settings
 
 Accidental preference, audio on/off, handedness and string order for the current
-instrument, the instrument editor, and the footer.
+instrument, the instrument editor, Export and Import, and the footer.
 
 **Footer.** Plain text links, not buttons, in millitap's order: source on GitHub,
 [Buy me a coffee](https://buymeacoffee.com/ditherstudio),

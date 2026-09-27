@@ -1,0 +1,146 @@
+/* What every page shares: millitap's tokens and the controls built from
+   them. Each page's own <style> adds its layout. */
+:root{
+  /* millitap's tokens, unchanged, so the two apps read as one publisher's.
+     Two surface roles, and the difference carries meaning: recessed wells
+     hold what you read, raised faces are what you touch. */
+  --ground:#0E1419;
+  --panel:#1A232C;        /* recessed */
+  --panel-hi:#26323E;     /* raised, pressed */
+  --raise-a:#2A3743;      /* raised face, gradient top */
+  --raise-b:#1E2933;      /* raised face, gradient bottom */
+  --rule:#2B3743;
+  --ink:#EAF0F6;
+  --ink-dim:#93A4B7;
+  --ink-mute:#66788C;
+
+  /* Right and wrong keep millitap's on-the-beat green and missed rose, which
+     already mean exactly that across the family. */
+  --true:#7FCB8F;
+  --miss:#C2566B;
+
+  /* The neck. Dark, low-saturation wood that sits on the ground rather
+     than competing with it; the colour belongs to what you tap, not to the
+     instrument. Pale pearl inlays, and metal that reads as metal without
+     outshining the marks drawn over it. */
+  --wood-a:#2B2420;
+  --wood-b:#231D1A;
+  --fret:#7E8893;
+  --nut:#CFC8B8;
+  --string:#A9B3BD;
+  --pearl:#E2DCCD;
+  --edge:#4A3E36;
+
+  --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp5:24px;
+  --r1:6px; --r2:10px; --r3:14px;
+
+  --fig: ui-monospace, "SF Mono", Menlo, monospace;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+/* Author display rules beat the UA sheet's [hidden], so any element that
+   takes a display rule would silently stop hiding. Global, so none can. */
+[hidden]{display:none!important}
+
+.brand{display:flex;align-items:center;gap:var(--sp2)}
+.brand h1{font-size:13px;font-weight:600;color:var(--ink);letter-spacing:.05em}
+/* The icon at header scale: a nut, frets, strings, the pearl inlay between
+   two strings and one found note sitting on a string. */
+.mark{width:19px;height:19px;flex:0 0 auto}
+.mark .nut{fill:var(--ink-dim)}
+.mark .fret{fill:#485A6E}
+.mark .str{fill:#78889A}
+.mark .pearl{fill:#E2DCCD}
+.mark .found{fill:var(--true)}
+.navs{justify-self:end;display:flex;align-items:center;gap:2px}
+.navbtn{display:flex;align-items:center;justify-content:center;padding:var(--sp1);
+  background:none;border:none;box-shadow:none;color:var(--ink-mute)}
+.navbtn svg{width:17px;height:17px;fill:currentColor;display:block}
+.navbtn:active{background:none}
+.navbtn.on{color:var(--ink)}
+a.navbtn:hover{color:var(--ink-dim)}
+a.navbtn:focus-visible{outline:2px solid var(--true);outline-offset:2px;border-radius:var(--r1)}
+
+button{font-family:inherit;color:var(--ink);
+  background:linear-gradient(var(--raise-a),var(--raise-b));
+  border:1px solid var(--rule);border-radius:var(--r1);
+  padding:10px 14px;font-size:13px;cursor:pointer;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.055)}
+button:active{background:var(--panel-hi);box-shadow:none}
+button:focus-visible{outline:2px solid var(--true);outline-offset:2px}
+
+.sect{display:grid;gap:var(--sp2);padding:var(--sp3) var(--sp4)}
+.sect + .sect{border-top:1px solid var(--rule)}
+.sect h2{font-size:10px;font-weight:600;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-mute)}
+.note{font-size:12px;line-height:1.6;color:var(--ink-dim);max-width:62ch}
+
+/* Deliberately the quietest thing in the panel: muted ink, small, and the
+   links carry no button chrome. The register is a footer, not an ask. */
+.about p{font-family:var(--fig);font-size:11px;color:var(--ink-mute);line-height:1.7}
+.about b{font-weight:500;color:var(--ink-dim)}
+.about .sep{opacity:.5;padding:0 2px}
+.about a{color:var(--ink-dim);text-decoration:underline;
+  text-underline-offset:2px;text-decoration-color:var(--rule)}
+.about a:hover{color:var(--ink);text-decoration-color:var(--ink-mute)}
+.about a:focus-visible{outline:2px solid var(--true);outline-offset:2px}
+
+/* Toast and messages float just above the app bar, clear of its buttons. */
+#toast{position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(44px + env(safe-area-inset-bottom));
+  background:var(--true);color:#0C1710;padding:11px 17px;border-radius:var(--r1);
+  font-size:13px;font-weight:600;z-index:30;border:none;
+  box-shadow:0 10px 28px rgba(0,0,0,.5)}
+
+#msg{position:fixed;left:50%;transform:translateX(-50%) translateY(6px);
+  bottom:calc(44px + env(safe-area-inset-bottom));
+  background:var(--panel-hi);color:var(--ink);border:1px solid var(--rule);
+  padding:9px 15px;border-radius:var(--r1);font-size:12px;z-index:29;
+  box-shadow:0 10px 28px rgba(0,0,0,.5);pointer-events:none;
+  opacity:0;visibility:hidden;
+  transition:opacity .14s linear, transform .14s ease-out}
+#msg.on{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0)}
+@media (prefers-reduced-motion:reduce){ #msg{transition:none} }
+
+button:disabled{opacity:.35;cursor:default}
+button.go{background:var(--true);border-color:var(--true);color:#0C1710;font-weight:600}
+.mini{padding:6px 8px;font-size:11px;min-width:28px;line-height:1;color:var(--ink-dim)}
+.mini.warn{color:var(--miss);border-color:rgba(194,86,107,.4)}
+.hint{font-family:var(--fig);font-size:10px;font-weight:400;letter-spacing:0;
+  text-transform:none;color:var(--ink-mute);opacity:.8}
+
+.pick{display:flex;flex-wrap:wrap;gap:var(--sp2)}
+.chip{padding:8px 12px;font-size:12px;line-height:1}
+.chip.sel{background:var(--true);border-color:var(--true);color:#0C1710;
+  box-shadow:0 0 18px -7px var(--true)}
+/* A chip that names a choice and says what it means underneath. */
+.chip.two{display:grid;gap:4px;text-align:left;padding:9px 12px}
+.chip.two b{font-weight:600}
+.chip.two i{font-style:normal;font-size:10px;opacity:.75}
+/* Not a button: "custom" is what the sliders made, not a choice to pick. */
+.chip.custom{cursor:default}
+
+/* Text fields sit recessed, like the wells: they hold something you read
+   back. Selectable, unlike the rest of the page. */
+input[type=text]{font-family:inherit;font-size:14px;color:var(--ink);width:100%;
+  background:var(--panel);border:1px solid var(--rule);border-radius:var(--r1);
+  padding:8px 10px;-webkit-user-select:text;user-select:text;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.3)}
+input:focus-visible{outline:2px solid var(--true);outline-offset:1px}
+input[aria-invalid]{border-color:var(--miss);box-shadow:0 0 0 1px var(--miss)}
+.num{width:64px;font-family:var(--fig);text-align:center}
+.num.sm{width:48px;flex:0 0 auto}
+label.inline{display:flex;align-items:center;gap:var(--sp3);font-size:12px;color:var(--ink-dim)}
+.check{display:flex;align-items:center;gap:var(--sp3);font-size:12px;color:var(--ink-dim)}
+.check input{width:19px;height:19px;accent-color:var(--true);flex:0 0 auto}
+
+/* Deleting everything: kept apart from the everyday buttons. */
+.danger{display:grid;gap:var(--sp2);padding-top:var(--sp2);border-top:1px dashed var(--rule)}
+.danger > .mini{justify-self:start}
+.wipeask{display:grid;gap:var(--sp2)}
+.wipeask input{max-width:160px}
+.warnbtn{background:var(--miss);border-color:var(--miss);color:#fff;font-weight:600}
+
+/* Read out, not shown. */
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);
+  white-space:nowrap}

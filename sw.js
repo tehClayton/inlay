@@ -2,7 +2,7 @@
    not a hard refresh, not clearing Safari's history. This constant is the
    single lever, and forgetting it is the #1 way to convince yourself
    GitHub Pages didn't deploy. */
-const VERSION = "v24";
+const VERSION = "v25";
 
 /* "inlay-", never a bare version: millitap is served from the same origin and
    keeps its own "millitap-" caches. Each app deletes only its own old ones. */
@@ -10,7 +10,10 @@ const CACHE = `inlay-${VERSION}`;
 const ASSETS = [
   "./",
   "./index.html",
+  "./history.html",
+  "./app.css",
   "./ui.js",
+  "./data.js",
   "./theory.js",
   "./instrument.js",
   "./store.js",
