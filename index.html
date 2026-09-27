@@ -298,7 +298,7 @@
   /* The keyboard's cursor: the cell outlined, drawn only while the board has focus. */
   .fb-cursor{fill:rgba(234,240,246,.08);stroke:var(--ink);stroke-width:2;stroke-dasharray:4 3}
   .fb:focus{outline:none}
-  .board.live:focus-within{box-shadow:inset 0 0 0 2px var(--true)}
+  .board.live.kbd{box-shadow:inset 0 0 0 2px var(--true)}
 
   /* Read out, not shown. */
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);
@@ -815,11 +815,13 @@ practice = createPractice({
 
 /* Space starts and stops a run, and Escape stops one — when nothing else
    wants the key: a button or field has its own use for Space, the
-   fretboard taps with it, and Escape closes an open panel first. */
+   fretboard taps with it while its keyboard cursor is showing (a tap
+   focuses it too, but without the cursor), and Escape closes an open
+   panel first. */
 addEventListener("keydown", e => {
   if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
   const inControl = e.target instanceof Element &&
-    e.target.closest("button, input, select, textarea, a, .fb, .nb, .settings");
+    e.target.closest("button, input, select, textarea, a, .kbd > .fb, .settings");
   if (e.key === " " && !inControl){ e.preventDefault(); $("runBtn").click(); }
   else if (e.key === "Escape" && practice.running){ e.preventDefault(); practice.stop(); }
 });

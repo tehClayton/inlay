@@ -528,7 +528,20 @@ export function createFretboard(host, { onTap, onCursor } = {}){
     parent.append(el("polygon", { class: "fb-cursor", points: points(c.pts) }));
   }
 
+  /* A tap focuses the board, which its preventDefault would otherwise stop:
+     the keys then carry on from where the pointer was, and Tab from the
+     board, not from the last button pressed. Focus that came from a pointer
+     shows no cursor until a key asks for one. */
+  let byPointer = false;
   svg.addEventListener("pointerdown", e => {
+    if (document.activeElement !== svg){
+      byPointer = true;
+      svg.focus({ preventScroll: true });
+      byPointer = false;
+    } else if (focused){
+      showFocus(false);
+      draw();
+    }
     if (!L || !onTap) return;
     const r = svg.getBoundingClientRect();
     const hit = cellAt(L, e.clientX - r.left, e.clientY - r.top);
@@ -552,25 +565,34 @@ export function createFretboard(host, { onTap, onCursor } = {}){
   function moveCursor(pos){
     cursor = pos;
     draw();
-    if (onCursor) onCursor(pos);
+    if (onCursor && pos) onCursor(pos);
+  }
+
+  /* `focused` is keyboard focus: the cursor is drawn and the well outlined. */
+  function showFocus(on){
+    focused = on;
+    host.classList.toggle("kbd", on);
   }
 
   svg.addEventListener("focus", () => {
-    focused = true;
+    if (byPointer) return;
+    showFocus(true);
     if (L) moveCursor(home());
   });
-  svg.addEventListener("blur", () => { focused = false; draw(); });
+  svg.addEventListener("blur", () => { showFocus(false); draw(); });
 
   const ARROWS = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   svg.addEventListener("keydown", e => {
     if (!L) return;
     if (ARROWS[e.key]){
       e.preventDefault();
+      // Focused by a tap: the first arrow shows the cursor where it is.
+      if (!focused){ showFocus(true); moveCursor(home()); return; }
       const next = neighbour(L, cursor ?? home(), ARROWS[e.key]);
       if (next) moveCursor(next);
       return;
     }
-    if ((e.key === "Enter" || e.key === " ") && cursor && onTap){
+    if ((e.key === "Enter" || e.key === " ") && focused && cursor && onTap){
       // Space here taps rather than starting or stopping a run.
       e.preventDefault();
       e.stopPropagation();
@@ -603,7 +625,7 @@ export function createFretboard(host, { onTap, onCursor } = {}){
     clearMarks(){ marks = []; draw(); },
     /* The current layout, for whoever needs its measurements. */
     get layout(){ return L; },
-    destroy(){ ro.disconnect(); svg.remove(); },
+    destroy(){ ro.disconnect(); host.classList.remove("kbd"); svg.remove(); },
   };
 }
 
@@ -667,6 +689,7 @@ export function createNeckBar(host, { onMove } = {}){
   }
 
   svg.addEventListener("pointerdown", e => {
+    svg.focus({ preventScroll: true });   // which the preventDefault below would stop
     dragging = true;
     svg.setPointerCapture(e.pointerId);
     toPointer(e);
