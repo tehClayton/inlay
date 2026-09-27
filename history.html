@@ -58,6 +58,17 @@
   .tile i{font-style:normal;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mute)}
   .tile.lead b{color:var(--true)}
 
+  .cardhead{display:flex;align-items:center;justify-content:space-between;gap:var(--sp3);flex-wrap:wrap}
+  .heatwell{height:clamp(170px,28vw,260px);background:var(--ground);border-radius:var(--r1);overflow:hidden}
+  .legend{display:flex;align-items:center;gap:var(--sp2);flex-wrap:wrap;
+    font-family:var(--fig);font-size:10px;color:var(--ink-mute)}
+  .legend .bar{width:120px;height:8px;border-radius:4px}
+  .legend .gap{flex:0 0 var(--sp3)}
+  .legend .hol{display:inline-block;width:12px;height:10px;border:2px dashed var(--ink-mute);
+    border-radius:2px;vertical-align:-1px}
+  .detail{font-size:12px;color:var(--ink-dim);min-height:1.6em}
+  .detail b{color:var(--ink);font-weight:600}
+
   .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   table{width:100%;border-collapse:collapse;font-size:12px}
   th{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
@@ -76,6 +87,15 @@
 </style>
 </head>
 <body>
+<!-- The fretboard's wood, referenced by id as on the practice page. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="fbWood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color:var(--wood-a)"/>
+      <stop offset="1" style="stop-color:var(--wood-b)"/>
+    </linearGradient>
+  </defs>
+</svg>
 <div class="wrap">
   <header class="top">
     <a class="back" href="./">
@@ -105,6 +125,19 @@
     <div id="report" hidden>
       <div class="stack">
         <div class="tiles" id="tiles"></div>
+
+        <!-- The headline chart: the neck itself, each place you've answered
+             coloured by how it went. Drawn flat, like the neck bar, so it
+             reads as a map whatever view the practice board uses. -->
+        <section class="card" aria-labelledby="heatHead">
+          <div class="cardhead">
+            <h2 id="heatHead">Where on the neck <span class="hint" id="heatHint"></span></h2>
+            <div class="pick" id="heatPick" role="radiogroup" aria-labelledby="heatHead"></div>
+          </div>
+          <div class="heatwell" id="heat"></div>
+          <div class="legend" id="heatLegend"></div>
+          <p class="detail" id="heatDetail" aria-live="polite"></p>
+        </section>
 
         <section class="card">
           <h2>Sessions <span class="hint">newest first</span></h2>
@@ -150,7 +183,14 @@
 import { $, h, fill, say, watchForUpdates } from "./ui.js";
 import { loadInstruments, loadSessions, loadSettings, deleteAllData } from "./store.js";
 import { wireBackup, dataNote } from "./data.js";
-import { select, drillsOf, overall, trend, fmtPct, fmtTime, fmtSpread, fmtDur } from "./stats.js";
+import {
+  select, drillsOf, overall, trend, byPosition, heat, ramp, MIN_HEAT,
+  fmtPct, fmtTime, fmtSpread, fmtDur,
+} from "./stats.js";
+import { createFretboard } from "./fretboard.js";
+import { VIEW_PRESETS, pitchAt } from "./instrument.js";
+import { noteName } from "./theory.js";
+import { where } from "./practice.js";
 
 let instruments = [], sessions = [];
 /* What's showing: an instrument, and one drill or (null) all of them. Kept to
@@ -200,7 +240,7 @@ function render(){
   fill($("filters"),
     instruments.length > 1 ? chips("Instrument",
       instruments.map(i => ({ value: i.id, text: i.name })), instId,
-      v => { instId = v; drillKey = null; showAll = false; }) : null,
+      v => { instId = v; drillKey = null; showAll = false; picked = null; }) : null,
     drills.length > 1 ? chips("Drill",
       [{ value: null, text: "All drills" }, ...drills.map(d => ({ value: d.key, text: d.label }))],
       drillKey, v => { drillKey = v; showAll = false; }) : null);
@@ -216,7 +256,63 @@ function render(){
   $("empty").hidden = true;
   $("report").hidden = false;
   renderTiles(mine);
+  renderHeat(inst, mine);
   renderTable(mine);
+}
+
+/* ------------------------------------------------------------- heatmap */
+const METRICS = { time: "Typical time", miss: "Miss rate" };
+let metric = "time", board = null, positions = new Map(), picked = null;
+const notePref = () => loadSettings().notePref;
+const posKey = p => `${p.string}:${p.fret}`;
+
+/* The instrument laid flat and whole, in its own handedness and string
+   order: a map of the neck rather than a view of it. */
+const flat = inst => ({ ...inst, view: { ...(inst.view.flip ? VIEW_PRESETS.flipped : VIEW_PRESETS.tab), span: 0 } });
+
+function renderHeat(inst, mine){
+  fill($("heatPick"), Object.entries(METRICS).map(([m, text]) => {
+    const on = m === metric;
+    return h("button", { class: "chip" + (on ? " sel" : ""), type: "button", role: "radio",
+      "aria-checked": String(on), onclick: () => { metric = m; render(); } }, text);
+  }));
+  $("heatHint").textContent = metric === "time" ? "slow spots are warm" : "often-missed spots are warm";
+
+  const ps = byPosition(mine, inst);
+  positions = new Map(ps.map(p => [posKey(p), p]));
+  const { cells, lo, hi } = heat(ps, metric);
+  if (!board) board = createFretboard($("heat"), { onTap: showPos, onCursor: showPos });
+  board.show(flat(inst));
+  board.paint(cells.map(c => ({ pos: c, color: ramp(c.t), hollow: c.hollow })));
+
+  const [from, to] = metric === "time" ? [fmtTime(lo), fmtTime(hi)] : [fmtPct(lo), fmtPct(hi)];
+  const bar = h("span", { class: "bar", "aria-hidden": "true",
+    style: `background:linear-gradient(to right, ${[0, 0.25, 0.5, 0.75, 1].map(ramp).join(", ")})` });
+  fill($("heatLegend"),
+    lo == null ? h("span", {}, "Not enough answers anywhere yet to rate") :
+      [h("span", {}, `${from}${metric === "time" ? " fastest" : ""}`), bar,
+       h("span", {}, `${to}${metric === "time" ? " slowest" : " missed"}`)],
+    h("span", { class: "gap" }),
+    h("span", { class: "hol", "aria-hidden": "true" }),
+    h("span", {}, `fewer than ${MIN_HEAT} answers`));
+
+  // A picked place stays picked across a change of metric or drill.
+  if (picked) showPos(picked);
+  else fill($("heatDetail"), "Tap a place on the neck, or use the arrow keys, for its numbers.");
+}
+
+/* One place's numbers, picked out on the neck. */
+function showPos(pos){
+  const inst = current();
+  if (!inst || pitchAt(inst, pos.string, pos.fret) == null) return;
+  picked = pos;
+  board.clearMarks();
+  board.mark(pos, "target");
+  const name = noteName(pitchAt(inst, pos.string, pos.fret), notePref());
+  const p = positions.get(posKey(pos));
+  fill($("heatDetail"), h("b", {}, `${where(inst, pos)} · ${name}`), " — ",
+    !p ? "not answered here yet"
+       : `typical ${fmtTime(p.typicalMs)} · ${fmtPct(p.accuracy)} right · ${p.answers} answer${p.answers === 1 ? "" : "s"}`);
 }
 
 function renderTiles(mine){

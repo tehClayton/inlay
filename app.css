@@ -144,3 +144,39 @@ label.inline{display:flex;align-items:center;gap:var(--sp3);font-size:12px;color
 /* Read out, not shown. */
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);
   white-space:nowrap}
+
+/* The fretboard, on either page. Clipped: with part of the neck shown, the
+   rest runs off the edges. */
+.fb{display:block;width:100%;height:100%;overflow:hidden}
+.fb-wood{fill:url(#fbWood)}
+.fb-open{fill:rgba(255,255,255,.02)}
+.fb-fret{stroke:var(--fret);stroke-width:2;stroke-linecap:round}
+.fb-nut{stroke:var(--nut);stroke-width:5;stroke-linecap:round}
+.fb-spike{fill:var(--nut)}
+.fb-string{stroke:var(--string);stroke-linecap:round}
+.fb-inlay{fill:var(--pearl);opacity:.85}
+/* The player's view: the fretboard's near edge, lighter as the binding in
+   the light, with its side dots. */
+.fb-edge{fill:var(--edge)}
+.fb-side{fill:var(--pearl)}
+.fb-num{fill:var(--ink-mute);font-family:var(--fig);font-size:10px;text-anchor:middle}
+.fb-dim{fill:var(--ground);opacity:.62}
+.fb-mark circle{stroke-width:2}
+.fb-mark text{font-family:var(--ui);font-weight:600;text-anchor:middle;
+  dominant-baseline:central}
+.fb-mark.note circle{fill:var(--ink);stroke:var(--ink)}
+.fb-mark.note text{fill:#0C1710}
+.fb-mark.true circle{fill:var(--true);stroke:var(--true)}
+.fb-mark.true text{fill:#0C1710}
+.fb-mark.miss circle{fill:var(--miss);stroke:var(--miss)}
+.fb-mark.miss text{fill:#fff}
+.fb-mark.target circle{fill:none;stroke:var(--ink)}
+.fb-mark.target text{fill:var(--ink)}
+/* A miss is crossed through: right and wrong differ in shape, not only colour. */
+.fb-mark .x{stroke:#fff;stroke-width:2;stroke-linecap:round;opacity:.5}
+/* The keyboard's cursor: the cell outlined, drawn only while the board has focus. */
+.fb-cursor{fill:rgba(234,240,246,.08);stroke:var(--ink);stroke-width:2;stroke-dasharray:4 3}
+.fb:focus{outline:none}
+/* A painted cell: the history page's heatmap. Hollow is too few answers to
+   trust, drawn as an outline in the colour it would be. */
+.fb-paint.hollow{fill:none;stroke-width:2;stroke-dasharray:3 2}
