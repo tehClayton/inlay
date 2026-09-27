@@ -312,17 +312,23 @@ it is installed to the home screen. inlay:
 
 ### Export and import
 
-- **Export** writes one JSON file:
-  `{ app: "inlay", schema: 1, exported, instruments, sessions, sets }`. Device
-  settings are not included.
+All of it lives in **Settings → Your data**, which also says what's stored and when
+it was last backed up.
+
+- **Export** writes one JSON file, `inlay-backup-YYYY-MM-DD.json`:
+  `{ app: "inlay", schema: 1, exported, instruments, sessions }` (sets join it in
+  M4). Device settings are not included.
 - **Import merges, never replaces.** Sessions are deduplicated on
-  instrument + `t` + `key`. Instruments and sets with the same `id` keep whichever
-  copy has the newer `updated`.
-- **Validation first.** The file is fully checked before anything is written, and a
-  file from a newer schema is refused rather than partly understood.
-- **Danger zone.** "Delete all data" removes every `inlay.*` key after a typed
-  confirmation. Deleting an instrument deletes its sessions and sets, with its own
-  confirmation.
+  instrument + `t` + `key`. Instruments (and later sets) with the same `id` keep
+  whichever copy has the newer `updated`. A session whose instrument is in neither
+  place is skipped. The newest 2,000 sessions are kept.
+- **Validation first.** The file is fully checked before anything is written. A file
+  that isn't an inlay backup, or is from a newer schema, is refused rather than
+  partly understood; a single damaged record is skipped and counted. The merged
+  result is written whole: if the sessions don't fit, the instruments are put back.
+- **Danger zone.** "Delete all data" removes every `inlay.*` key, and nothing of
+  millitap's, after typing "delete". Deleting an instrument deletes its sessions
+  (and later sets), with its own confirmation.
 
 ## Screens
 
