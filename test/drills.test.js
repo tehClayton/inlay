@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   candidates, makePrompt, promptText, isRight, createScore, scoreText, DRILL_KINDS, SLOW_MS,
-  answerName, usesNotes, ALL_INTERVALS,
+  answerName, usesNotes, ALL_INTERVALS, findsAll,
 } from "../drills.js";
 import { newInstrument } from "../instrument.js";
 import { parsePitch, noteName } from "../theory.js";
@@ -53,7 +53,9 @@ test("every kind of prompt's targets answer it", () => {
       const p = makePrompt(kind, c, { rng });
       assert.ok(p.targets.length >= 1, kind);
       for (const t of p.targets){
-        assert.equal(t.pc, p.pc, kind);
+        // A chord's targets are any of its notes; every other drill's, one.
+        if (kind === "chord") assert.ok(p.tones.includes(t.pc), kind);
+        else assert.equal(t.pc, p.pc, kind);
         if (kind === "name") assert.ok(isRight(p, t.midi));
         else assert.ok(isRight(p, t), `${kind} target should be right`);
       }
@@ -116,7 +118,55 @@ test("interval: the prompt and its answer, spelled from the root", () => {
 
 test("the naturals filter is the note drills' alone", () => {
   assert.ok(usesNotes("findAny") && usesNotes("name"));
-  assert.ok(!usesNotes("interval"));
+  assert.ok(!usesNotes("interval") && !usesNotes("chord"));
+});
+
+test("chord: every place in view that plays one of its notes, and nothing else", () => {
+  const c = candidates(guitar(), [0, 5]), rng = seeded(4);
+  for (let i = 0; i < 200; i++){
+    const p = makePrompt("chord", c, { rng, chords: ["major", "minor", "dom7", "dim7"] });
+    assert.deepEqual(p.targets, c.filter(x => p.tones.includes(x.pc)));
+    for (const x of c.filter(x => !p.tones.includes(x.pc))) assert.ok(!isRight(p, x));
+    assert.ok(findsAll("chord"));
+  }
+});
+
+test("chord: only the types chosen, each as often as the others; the root random or fixed", () => {
+  const c = candidates(guitar(), [0, 12]), rng = seeded(8);
+  const types = {}, roots = new Set();
+  for (let i = 0; i < 3000; i++){
+    const p = makePrompt("chord", c, { rng, chords: ["minor", "maj7"] });
+    types[p.chord] = (types[p.chord] ?? 0) + 1;
+    roots.add(p.rootPc);
+  }
+  assert.deepEqual(Object.keys(types).sort(), ["maj7", "minor"]);
+  for (const n of Object.values(types)) assert.ok(n > 1350 && n < 1650, `${n} of 3000`);
+  assert.equal(roots.size, 12);
+  for (let i = 0; i < 50; i++) assert.equal(makePrompt("chord", c, { rng, root: 9 }).rootPc, 9);
+});
+
+test("chord: only chords whose every note is in view", () => {
+  // Frets 0–2 on the low E string: E F F♯. No chord's notes are all here.
+  const c = candidates(guitar(), [0, 2], { strings: [0] });
+  assert.equal(makePrompt("chord", c, { chords: ["major", "minor"] }), null);
+  // Frets 0–4 on the A string and 0–2 on the D: A B♭ B C C♯, D E♭ E — A major fits.
+  const d = candidates(guitar(), [0, 4], { strings: [1, 2] });
+  const p = makePrompt("chord", d, { chords: ["major"], root: 9 });
+  assert.equal(p.rootPc, 9);
+  assert.ok(p.tones.every(pc => d.some(x => x.pc === pc)));
+});
+
+test("chord: named and spelled for the chord", () => {
+  const c = candidates(guitar(), [0, 12]);
+  const p = makePrompt("chord", c, { chords: ["major"], root: 9 });
+  assert.equal(promptText(p, guitar(), "flat"), "A major");
+  assert.equal(promptText(p, guitar(), "flat", 3), `A major · 3 of ${p.targets.length}`);
+  assert.equal(answerName(p, "flat", 1), "C♯");         // its 3rd, not D♭
+  const q = makePrompt("chord", c, { chords: ["dim7"], root: 0 });
+  assert.equal(answerName(q, "sharp", 9), "B♭♭");       // C dim7's 7th
+  // D♭ F A♭ has fewer accidentals than C♯ E♯ G♯, whatever the preference.
+  const r = makePrompt("chord", c, { chords: ["major"], root: 1 });
+  assert.equal(promptText(r, guitar(), "sharp"), "D♭ major");
 });
 
 test("find on a string: the note on that string only, both octaves in view", () => {

@@ -162,7 +162,7 @@ One run is one **session**, saved on stop.
 | **Name the note** | A highlighted fret | Choose from 12 note buttons, or interval buttons when a root is set |
 | **Interval** | A highlighted root and an interval ("Major 3rd above A") | Tap the exact pitch that far above the root — not another octave of its note — anywhere it can be played inside the window |
 | **Name the interval** | A highlighted root and a marked fret | Choose from 12 interval buttons (1 ♭2 2 … 7) |
-| **Chord tones** | A chord ("A minor") | Tap every chord tone in the window, any order |
+| **Chord tones** | A chord ("A minor") | Tap every chord tone in the window, any order. Only a chord whose every note is in the window is asked; it's at its best with a few frets shown |
 | **Scale** | A root and scale type ("D dorian, frets 5–8") | Tap every scale tone, in ascending pitch order or any order |
 
 "Find all", "Chord tones" and "Scale" share one **find-all** mechanic. The prompt

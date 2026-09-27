@@ -113,6 +113,24 @@ test("the interval drill's intervals: all by default, and never none, repeats or
   }
 });
 
+test("the chord drill's types and the theory drills' root", () => {
+  assert.deepEqual(loadSettings().drillChords, ["major", "minor", "dom7"]);
+  assert.equal(loadSettings().drillRoot, null);
+  assert.ok(saveSettings({ drillChords: ["maj7", "min7"], drillRoot: 9 }));
+  assert.deepEqual(loadSettings().drillChords, ["maj7", "min7"]);
+  assert.equal(loadSettings().drillRoot, 9);
+  for (const bad of [[], ["major", "major"], ["power"], "major"]){
+    saveSettings({ drillChords: bad });
+    assert.deepEqual(loadSettings().drillChords, ["maj7", "min7"], JSON.stringify(bad));
+  }
+  for (const bad of [12, -1, 1.5, "A"]){
+    saveSettings({ drillRoot: bad });
+    assert.equal(loadSettings().drillRoot, 9, JSON.stringify(bad));
+  }
+  assert.ok(saveSettings({ drillRoot: null }));
+  assert.equal(loadSettings().drillRoot, null);
+});
+
 test("a bad stored setting falls back without spoiling the rest", () => {
   store.setItem(KEYS.settings, JSON.stringify({ notePref: 7, instrument: "abc", drill: "name" }));
   assert.deepEqual(loadSettings(), { ...SETTINGS_DEFAULTS, instrument: "abc", drill: "name" });

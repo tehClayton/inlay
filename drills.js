@@ -5,7 +5,7 @@
    on screen, narrowed by the filters. The frets shown are the practice
    range — zoom in on frets 5–9 and every prompt is in 5–9. */
 import { pitchAt, stringNumber } from "./instrument.js";
-import { pitchClass, isNatural, noteName, INTERVALS, intervalNote } from "./theory.js";
+import { pitchClass, isNatural, noteName, INTERVALS, intervalNote, CHORDS, tones, spell } from "./theory.js";
 
 export const DRILLS = Object.freeze({
   findAny:     { name: "Find any",             blurb: "tap the note anywhere in view" },
@@ -14,6 +14,7 @@ export const DRILLS = Object.freeze({
   findAllNeck: { name: "Find all on the neck", blurb: "every one of the note, nut to last fret" },
   name:        { name: "Name the note",        blurb: "say which note is marked" },
   interval:    { name: "Interval",             blurb: "tap the pitch an interval above the root" },
+  chord:       { name: "Chord tones",          blurb: "tap every note of the chord in view" },
 });
 export const DRILL_KINDS = Object.keys(DRILLS);
 
@@ -21,14 +22,18 @@ export const DRILL_KINDS = Object.keys(DRILLS);
    the whole neck, whatever part of it is on screen: finding the rest means
    moving along it. */
 export const wholeNeck = kind => kind === "findAllNeck";
-export const findsAll = kind => kind === "findAll" || kind === "findAllNeck";
+export const findsAll = kind => kind === "findAll" || kind === "findAllNeck" || kind === "chord";
 
 /* The theory drills ask from a root, which can be any note, so the naturals
    filter is the note drills' alone. */
-export const usesNotes = kind => kind !== "interval";
+export const usesNotes = kind => kind !== "interval" && kind !== "chord";
 
 /* Every interval, by its semitones: what the interval drill asks by default. */
 export const ALL_INTERVALS = Object.freeze(INTERVALS.map(i => i.semis));
+
+/* The chord types the chord drill asks until told otherwise: the three a
+   player meets first. */
+export const DEFAULT_CHORDS = Object.freeze(["major", "minor", "dom7"]);
 
 /* What can be asked: every playable position in frets [first, last], on the
    strings allowed (null is all), of the notes allowed ("all" or
@@ -55,9 +60,11 @@ const samePos = (a, b) => a.string === b.string && a.fret === b.fret;
    `last` is the previous prompt, so the same one never comes twice running
    when there's anything else to ask. Returns null when there's nothing to
    ask at all. */
-export function makePrompt(kind, cands, { rng = Math.random, last = null, intervals = ALL_INTERVALS } = {}){
+export function makePrompt(kind, cands, { rng = Math.random, last = null, intervals = ALL_INTERVALS,
+                                          chords = DEFAULT_CHORDS, root = null } = {}){
   if (!cands.length) return null;
   if (kind === "interval") return intervalPrompt(cands, { rng, last, intervals });
+  if (kind === "chord") return chordPrompt(cands, { rng, last, chords, root });
   const pcs = [...new Set(cands.map(c => c.pc))];
   const build = () => {
     if (kind === "name"){
@@ -117,12 +124,40 @@ function intervalPrompt(cands, { rng, last, intervals }){
   return p;
 }
 
-/* What a prompt's answer is called: an interval's note spelled from its
-   root, so a major 3rd above A is C♯ whatever the preference; any other
-   drill's, by the preference. */
-export function answerName(p, pref){
+/* A chord prompt: a chord type from those chosen and a root, random unless
+   fixed, and every place in view that plays one of its notes. Only a chord
+   whose every note is somewhere in view is asked — "every note of A7" with
+   no G in sight can't be answered. The type is chosen evenly first, then
+   the root. */
+function chordPrompt(cands, { rng, last, chords, root }){
+  const inView = new Set(cands.map(c => c.pc));
+  const roots = root == null ? [...Array(12).keys()] : [root];
+  const askable = new Map();          // chord type → roots it can be asked on
+  for (const id of chords){
+    const ok = roots.filter(r => tones(r, CHORDS[id].formula).every(pc => inView.has(pc)));
+    if (ok.length) askable.set(id, ok);
+  }
+  if (!askable.size) return null;
+  const build = () => {
+    const chord = pick([...askable.keys()], rng);
+    const rootPc = pick(askable.get(chord), rng);
+    const ts = tones(rootPc, CHORDS[chord].formula);
+    return { kind: "chord", chord, rootPc, tones: ts, targets: cands.filter(c => ts.includes(c.pc)),
+             key: `chord:${rootPc}:${chord}` };
+  };
+  let p = build();
+  for (let tries = 0; last && p.key === last.key && tries < 12; tries++) p = build();
+  return p;
+}
+
+/* What an answer is called. An interval's note is spelled from its root
+   and a chord's notes for the chord, so a major 3rd above A is C♯, and so
+   is the 3rd of A major, whatever the preference; the note drills' by the
+   preference. `pc` is which of a chord's notes. */
+export function answerName(p, pref, pc = p.pc){
   if (p.kind === "interval") return intervalNote(p.rootPc, p.semis, pref).name;
-  return noteName(p.pc, pref);
+  if (p.kind === "chord") return spell(p.rootPc, CHORDS[p.chord].formula, pref).find(n => n.pc === pc).name;
+  return noteName(pc, pref);
 }
 
 /* The words for a prompt. `inst` names the string for findOn by its number
@@ -133,6 +168,10 @@ export function promptText(p, inst, pref, found = 0){
   if (p.kind === "findOn"){
     const s = inst.strings[p.string];
     return `${note} on string ${stringNumber(p.string, inst.strings.length)} (${noteName(s.open, pref)})`;
+  }
+  if (p.kind === "chord"){
+    const root = spell(p.rootPc, CHORDS[p.chord].formula, pref)[0].name;
+    return `${root} ${CHORDS[p.chord].name}` + (found ? ` · ${found} of ${p.targets.length}` : "");
   }
   if (findsAll(p.kind)){
     const where = p.kind === "findAllNeck" ? " on the neck" : "";

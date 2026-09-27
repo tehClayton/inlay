@@ -16,7 +16,7 @@ import {
   wholeNeck, findsAll, usesNotes, answerName, ALL_INTERVALS,
 } from "./drills.js";
 import { fretRange, stringNumber, pitchAt } from "./instrument.js";
-import { noteName, parseNote, INTERVALS } from "./theory.js";
+import { noteName, parseNote, pitchClass, INTERVALS, CHORDS } from "./theory.js";
 import { createRecorder } from "./sessions.js";
 
 const NEXT_MS = 400;         // after a right answer, before the next prompt
@@ -73,7 +73,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     // An interval's root is marked throughout, in the amber study uses for
     // roots, and its answers are spelled from it.
     if (prompt.root) board.mark(prompt.root, "root", noteName(prompt.rootPc, pref()));
-    const answer = prompt.kind === "interval" ? () => answerName(prompt, pref()) : name;
+    const answer = m => answerName(prompt, pref(), pitchClass(pitchAt(inst, m.string, m.fret)));
     if (prompt.kind === "name"){
       board.mark(prompt.pos, revealed ? "target" : (state === "between" ? "true" : "target"),
                  revealed || state === "between" ? noteName(prompt.pc, pref()) : "?");
@@ -141,7 +141,9 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     cands = pool();
     // An interval needs both its notes in view, so there can be places to
     // stand but nothing to ask.
-    const made = cands.length ? makePrompt(kind(), cands, { last: prompt, intervals: getSettings().drillIntervals }) : null;
+    const s = getSettings();
+    const made = cands.length ? makePrompt(kind(), cands, { last: prompt, intervals: s.drillIntervals,
+      chords: s.drillChords, root: s.drillRoot }) : null;
     if (!made){
       stop();
       say("Nothing to ask here: widen the frets shown or the drill's filters.");
@@ -373,12 +375,37 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
       })),
     ] : null;
 
+    // Which chord types come up: at least one.
+    const chords = s.drill === "chord" ? [
+      h("h2", {}, "Chords ", h("span", { class: "hint" }, "tap to add or leave out")),
+      h("div", { class: "pick" }, Object.entries(CHORDS).map(([id, c]) => {
+        const on = s.drillChords.includes(id);
+        return chip(on, c.name, null, () => {
+          const next = on ? s.drillChords.filter(x => x !== id)
+                          : Object.keys(CHORDS).filter(x => x === id || s.drillChords.includes(x));
+          if (!next.length) return;
+          saveSettings({ drillChords: next }); renderPanel(); changed();
+        }, "checkbox");
+      })),
+    ] : null;
+
+    // The root of a chord: random, or held on one note to learn its shapes.
+    const root = s.drill === "chord" ? [
+      h("h2", { id: "drillRootLabel" }, "Root"),
+      h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "drillRootLabel" },
+        chip(s.drillRoot === null, "Random", null, () => { saveSettings({ drillRoot: null }); renderPanel(); changed(); }),
+        Array.from({ length: 12 }, (_, pc) =>
+          chip(s.drillRoot === pc, noteName(pc, s.notePref), null, () => {
+            saveSettings({ drillRoot: pc }); renderPanel(); changed();
+          }))),
+    ] : null;
+
     fill($("drillPanel"),
       h("div", { class: "sect" }, h("h2", { id: "drillKindLabel" }, "Drill"), kinds),
       h("div", { class: "sect" },
         h("h2", {}, "Strings ", h("span", { class: "hint" }, "tap to leave one out")),
         h("div", { class: "pick" }, stringChips),
-        notes, intervals),
+        notes, intervals, chords, root),
       h("div", { class: "sect" },
         h("p", { class: "note" }, "The frets shown are the practice range: every prompt is in view, " +
           "and the neck past them is dimmed. Change them with − / + and the neck bar at the top. " +
