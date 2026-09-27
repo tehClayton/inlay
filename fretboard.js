@@ -637,6 +637,9 @@ export function createFretboard(host, { onTap, onCursor } = {}){
     /* A marker on a position: kind is a class ("note", "true", "miss",
        "target"), text an optional label inside it. */
     mark(pos, kind, text){ marks.push({ pos, kind, text }); draw(); },
+    /* All the marks at once, [{ pos, kind, text }], in one redraw: a board
+       labelled end to end is over a hundred of them. */
+    setMarks(list){ marks = list.map(({ pos, kind, text }) => ({ pos, kind, text })); draw(); },
     /* Colours cells: [{ pos, color, hollow }], hollow drawing only an outline.
        Replaces any painted before; [] clears. */
     paint(cells){ paint = cells; draw(); },
