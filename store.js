@@ -164,6 +164,7 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   drillScales: DEFAULT_SCALES,     // the scale drill's scale types (theory.js SCALES)
   drillScaleOrder: "any",          // any | up
   drillRoot: null,                 // the theory drills' root: a pitch class, or null for random
+  drillLabels: "names",            // the theory drills' found notes: names | degrees
   lastExport: null,      // when a backup was last exported from this device, ms
 });
 
@@ -180,6 +181,7 @@ const SETTINGS_VALID = {
     v.every(id => Object.hasOwn(SCALES, id)),
   drillScaleOrder: v => v === "any" || v === "up",
   drillRoot: v => v === null || (Number.isInteger(v) && v >= 0 && v < 12),
+  drillLabels: v => v === "names" || v === "degrees",
   lastExport: v => v === null || (Number.isFinite(v) && v > 0),
 };
 

@@ -13,7 +13,8 @@
 import { $, h, fill, label, say, openPanel, closePanel, isOpen } from "./ui.js";
 import {
   DRILLS, DRILL_KINDS, candidates, makePrompt, promptText, isRight, createScore, scoreText,
-  wholeNeck, findsAll, usesNotes, answerName, ALL_INTERVALS, needed, naming, DEGREE_LABELS,
+  wholeNeck, findsAll, usesNotes, answerName, answerLabel, hasRoot, ALL_INTERVALS, needed, naming,
+  DEGREE_LABELS,
 } from "./drills.js";
 import { fretRange, stringNumber, pitchAt } from "./instrument.js";
 import { noteName, parseNote, pitchClass, INTERVALS, CHORDS, SCALES } from "./theory.js";
@@ -73,7 +74,8 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     // An interval's root is marked throughout, in the amber study uses for
     // roots, and its answers are spelled from it.
     if (prompt.root) board.mark(prompt.root, "root", noteName(prompt.rootPc, pref()));
-    const answer = m => answerName(prompt, pref(), pitchClass(pitchAt(inst, m.string, m.fret)));
+    const answer = m => answerLabel(prompt, pref(), pitchClass(pitchAt(inst, m.string, m.fret)),
+                                    getSettings().drillLabels);
     if (naming(prompt.kind)){
       board.mark(prompt.pos, revealed ? "target" : (state === "between" ? "true" : "target"),
                  revealed || state === "between" ? answerName(prompt, pref()) : "?");
@@ -430,6 +432,15 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     ] : null;
 
     // The root: random, or held on one note to learn its shapes.
+    // Scale-degree labels: what a theory drill's found notes say. Name the
+    // interval's answers are degrees already.
+    const labels = hasRoot(s.drill) && s.drill !== "nameInterval" ? [
+      h("h2", { id: "drillLabelsLabel" }, "Label found notes"),
+      h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "drillLabelsLabel" },
+        [["names", "Names", "C♯"], ["degrees", "Degrees", "3 of A"]].map(([v, t, sub]) =>
+          chip(s.drillLabels === v, t, sub, () => { saveSettings({ drillLabels: v }); renderPanel(); render(); }))),
+    ] : null;
+
     const root = ["chord", "scale", "nameInterval"].includes(s.drill) ? [
       h("h2", { id: "drillRootLabel" }, "Root"),
       h("div", { class: "pick", role: "radiogroup", "aria-labelledby": "drillRootLabel" },
@@ -445,7 +456,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
       h("div", { class: "sect" },
         h("h2", {}, "Strings ", h("span", { class: "hint" }, "tap to leave one out")),
         h("div", { class: "pick" }, stringChips),
-        notes, intervals, types, order, root),
+        notes, intervals, types, order, root, labels),
       h("div", { class: "sect" },
         h("p", { class: "note" }, "The frets shown are the practice range: every prompt is in view, " +
           "and the neck past them is dimmed. Change them with − / + and the neck bar at the top. " +
