@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="inlay">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1B2430">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>inlay · history</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  /* Unlike the practice page, this one scrolls: it's read, not played. */
+  body{
+    min-height:100%;
+    background-color:var(--ground);
+    background-image:radial-gradient(120% 40% at 50% -8%, #18232E 0%, rgba(24,35,46,0) 64%);
+    background-repeat:no-repeat;
+    color:var(--ink); font-family:var(--ui);
+    -webkit-tap-highlight-color:transparent;
+    padding:max(var(--sp2),env(safe-area-inset-top)) max(var(--sp3),env(safe-area-inset-right))
+            max(var(--sp5),env(safe-area-inset-bottom)) max(var(--sp3),env(safe-area-inset-left));
+  }
+  .wrap{max-width:880px;margin:0 auto;display:grid;gap:var(--sp3)}
+  .stack{display:grid;gap:var(--sp3);min-width:0}
+
+  /* Back to practice on the left, the app in the middle, as the practice
+     page's bar has it at the bottom. */
+  .top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;min-height:36px}
+  .back{justify-self:start;display:flex;align-items:center;gap:4px;padding:6px 8px;
+    color:var(--ink-dim);font-size:12px;text-decoration:none;border-radius:var(--r1)}
+  .back svg{width:14px;height:14px;fill:currentColor}
+  .back:hover{color:var(--ink)}
+  .back:focus-visible{outline:2px solid var(--true);outline-offset:2px}
+  .top h1 .sub{font-weight:400;color:var(--ink-mute)}
+
+  /* Every block is a recessed card: this page holds things you read. */
+  .card{background:var(--panel);border-radius:var(--r2);padding:var(--sp3) var(--sp4);
+    display:grid;gap:var(--sp3);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.42), inset 0 2px 5px rgba(0,0,0,.34)}
+  .card h2{font-size:10px;font-weight:600;letter-spacing:.11em;
+    text-transform:uppercase;color:var(--ink-mute)}
+  .note a{color:var(--ink);text-underline-offset:2px}
+  .note a:focus-visible{outline:2px solid var(--true);outline-offset:2px}
+  .filters{display:grid;gap:var(--sp2)}
+  .filters .row{display:flex;align-items:baseline;gap:var(--sp3);flex-wrap:wrap}
+  .filters .lab{font-size:10px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;
+    color:var(--ink-mute);min-width:9ch}
+
+  /* The headline numbers, in millitap's readout style: a figure over its name. */
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:var(--sp2)}
+  .tile{background:var(--panel);border-radius:var(--r2);padding:var(--sp3);display:grid;gap:2px;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.42), inset 0 2px 5px rgba(0,0,0,.34)}
+  .tile b{font-family:var(--fig);font-size:19px;font-weight:500;font-variant-numeric:tabular-nums}
+  .tile i{font-style:normal;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mute)}
+  .tile.lead b{color:var(--true)}
+
+  .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-mute);text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule);white-space:nowrap}
+  td{padding:7px 8px;border-bottom:1px solid rgba(43,55,67,.5);color:var(--ink-dim);white-space:nowrap}
+  td.drill{color:var(--ink);white-space:normal;min-width:16ch}
+  th.n, td.n{text-align:right;font-family:var(--fig);font-variant-numeric:tabular-nums}
+  tbody tr:last-child td{border-bottom:none}
+  .more{justify-self:start}
+
+  /* Deliberately alone, as in millitap: below a rule and a good stretch of
+     nothing, so it's never a thumb's width from Import. */
+  .dangerzone{margin-top:28vh;padding-top:var(--sp4);border-top:1px solid var(--rule);
+    display:grid;gap:var(--sp3);justify-items:start}
+  .dangerzone .btns{display:flex;gap:var(--sp2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="back" href="./">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7z"/></svg>
+      Practice
+    </a>
+    <span class="brand">
+      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+        <rect class="nut"  x="3.4"  y="5.6" width="1.2" height="12.8"/>
+        <rect class="fret" x="9.4"  y="5.6" width="0.7" height="12.8"/>
+        <rect class="fret" x="14.7" y="5.6" width="0.7" height="12.8"/>
+        <rect class="fret" x="20"   y="5.6" width="0.7" height="12.8"/>
+        <rect class="str"  x="4"    y="7.7"  width="16.7" height="0.5"/>
+        <rect class="str"  x="4"    y="10.3" width="16.7" height="0.6"/>
+        <rect class="str"  x="4"    y="13"   width="16.7" height="0.7"/>
+        <rect class="str"  x="4"    y="15.6" width="16.7" height="0.8"/>
+        <circle class="pearl" cx="12.2" cy="12" r="1.2"/>
+        <circle class="found" cx="6.9" cy="16" r="1.8"/>
+      </svg>
+      <h1>inlay <span class="sub">history</span></h1>
+    </span>
+  </header>
+
+  <main class="stack" id="main">
+    <section class="card filters" id="filters" aria-label="Show"></section>
+    <p class="note" id="empty" hidden></p>
+    <div id="report" hidden>
+      <div class="stack">
+        <div class="tiles" id="tiles"></div>
+
+        <section class="card">
+          <h2>Sessions <span class="hint">newest first</span></h2>
+          <div class="tablewrap" id="table"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Backup acts on everything, so it sits outside the report rather than
+         belonging to whichever instrument or drill is showing. -->
+    <section class="card">
+      <h2>Your data <span class="hint">every instrument and session on this device, one file</span></h2>
+      <p class="note" id="dataNote"></p>
+      <div class="pick">
+        <button id="exportBtn" type="button">Export backup</button>
+        <button id="importBtn" type="button">Import backup</button>
+        <input id="importFile" type="file" accept=".json,application/json" hidden>
+      </div>
+    </section>
+
+    <!-- Asks for a typed word, not just a tap: there is no undo. -->
+    <section class="dangerzone" aria-labelledby="wipeHead">
+      <h2 class="sr" id="wipeHead">Delete all data</h2>
+      <p class="note">Deleting removes every instrument and all practice history on this
+        device. There is no undo — export a backup first if you might want them back.</p>
+      <button id="wipeBtn" class="mini warn" type="button" aria-expanded="false" aria-controls="wipeAsk">Delete all data…</button>
+      <div id="wipeAsk" class="wipeask" hidden>
+        <label class="inline">Type <b>delete</b> to confirm
+          <input id="wipeText" type="text" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+        <div class="btns">
+          <button id="wipeCancel" type="button">Cancel</button>
+          <button id="wipeGo" class="warnbtn" type="button" disabled>Delete everything</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="msg" role="status" aria-live="polite"></div>
+<button id="toast" type="button" hidden>Updated — tap to reload</button>
+
+<script type="module">
+import { $, h, fill, say, watchForUpdates } from "./ui.js";
+import { loadInstruments, loadSessions, loadSettings, deleteAllData } from "./store.js";
+import { wireBackup, dataNote } from "./data.js";
+import { select, drillsOf, overall, trend, fmtPct, fmtTime, fmtSpread, fmtDur } from "./stats.js";
+
+let instruments = [], sessions = [];
+/* What's showing: an instrument, and one drill or (null) all of them. Kept to
+   the page: looking at another instrument's history doesn't change what
+   the practice page has in hand. */
+let instId = loadSettings().instrument, drillKey = null;
+let showAll = false;
+const ROWS = 25;
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+function load(){
+  instruments = loadInstruments();
+  sessions = loadSessions();
+  if (!instruments.some(i => i.id === instId)) instId = instruments[0]?.id ?? null;
+}
+
+const current = () => instruments.find(i => i.id === instId) ?? null;
+
+/* A row of chips choosing one of several; the chosen one is marked, as the
+   practice page's pickers are. */
+function chips(name, options, chosen, choose){
+  return h("div", { class: "row" },
+    h("span", { class: "lab", id: `${name}Lab` }, name),
+    h("div", { class: "pick", role: "radiogroup", "aria-labelledby": `${name}Lab` },
+      options.map(o => {
+        const on = o.value === chosen;
+        return h("button", { class: "chip" + (on ? " sel" : ""), type: "button", role: "radio",
+          "aria-checked": String(on), onclick: () => { choose(o.value); render(); } }, o.text);
+      })));
+}
+
+function render(){
+  $("dataNote").textContent = dataNote();
+  const inst = current();
+  if (!inst){
+    $("filters").hidden = true;
+    $("report").hidden = true;
+    fill($("empty"), "Nothing here yet. ", h("a", { href: "./" }, "Set up an instrument"),
+      " and practise, and how it's going shows up here.");
+    $("empty").hidden = false;
+    return;
+  }
+
+  const drills = drillsOf(sessions, inst);
+  if (!drills.some(d => d.key === drillKey)) drillKey = null;
+  fill($("filters"),
+    instruments.length > 1 ? chips("Instrument",
+      instruments.map(i => ({ value: i.id, text: i.name })), instId,
+      v => { instId = v; drillKey = null; showAll = false; }) : null,
+    drills.length > 1 ? chips("Drill",
+      [{ value: null, text: "All drills" }, ...drills.map(d => ({ value: d.key, text: d.label }))],
+      drillKey, v => { drillKey = v; showAll = false; }) : null);
+  $("filters").hidden = !$("filters").children.length;
+
+  const mine = select(sessions, inst, drillKey);
+  if (!mine.length){
+    $("report").hidden = true;
+    fill($("empty"), `No practice on ${inst.name} yet. Runs of 5 answers or more are kept, and show up here.`);
+    $("empty").hidden = false;
+    return;
+  }
+  $("empty").hidden = true;
+  $("report").hidden = false;
+  renderTiles(mine);
+  renderTable(mine);
+}
+
+function renderTiles(mine){
+  const o = overall(mine);
+  const played = mine.reduce((a, s) => a + s.dur, 0);
+  const tile = (value, name, lead) => h("div", { class: "tile" + (lead ? " lead" : "") },
+    h("b", {}, value), h("i", {}, name));
+  fill($("tiles"),
+    tile(fmtTime(o.typicalMs), "typical time", true),
+    tile(fmtPct(o.accuracy), "accuracy"),
+    tile(fmtSpread(o.typicalMs == null ? null : o.spread), "spread"),
+    tile(String(o.answers), "answers"),
+    tile(String(mine.length), mine.length === 1 ? "session" : "sessions"),
+    tile(fmtDur(played), "practised"));
+}
+
+function when(t){
+  const d = new Date(t);
+  return `${d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} ` +
+         d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderTable(mine){
+  const points = trend(mine).reverse();
+  const rows = showAll ? points : points.slice(0, ROWS);
+  const th = (text, cls) => h("th", { scope: "col", class: cls }, text);
+  fill($("table"),
+    h("table", {},
+      h("caption", { class: "sr" }, "Practice sessions, newest first"),
+      h("thead", {}, h("tr", {},
+        th("When"), th("Drill"), th("Time", "n"), th("Answers", "n"), th("Accuracy", "n"), th("Typical", "n"))),
+      h("tbody", {}, rows.map(p => h("tr", {},
+        h("td", {}, when(p.t)),
+        h("td", { class: "drill" }, p.label),
+        h("td", { class: "n" }, fmtDur(p.dur)),
+        h("td", { class: "n" }, String(p.answers)),
+        h("td", { class: "n" }, fmtPct(p.accuracy)),
+        h("td", { class: "n" }, fmtTime(p.typicalMs)))))),
+    points.length > rows.length
+      ? h("button", { class: "mini more", type: "button",
+          onclick: () => { showAll = true; render(); } }, `Show all ${points.length}`)
+      : null);
+}
+
+/* --------------------------------------------------------- your data */
+wireBackup({
+  exportBtn: $("exportBtn"), importBtn: $("importBtn"), importFile: $("importFile"),
+  changed: () => { load(); render(); },
+});
+
+function closeWipe(){
+  $("wipeAsk").hidden = true;
+  $("wipeBtn").setAttribute("aria-expanded", "false");
+  $("wipeText").value = "";
+  $("wipeGo").disabled = true;
+}
+$("wipeBtn").onclick = () => {
+  const open = $("wipeAsk").hidden;
+  if (!open){ closeWipe(); return; }
+  $("wipeAsk").hidden = false;
+  $("wipeBtn").setAttribute("aria-expanded", "true");
+  $("wipeText").focus();
+};
+$("wipeCancel").onclick = () => { closeWipe(); $("wipeBtn").focus(); };
+$("wipeText").oninput = e => { $("wipeGo").disabled = e.target.value.trim().toLowerCase() !== "delete"; };
+/* Afterwards, the practice page starts over as a first visit would. */
+$("wipeGo").onclick = () => {
+  if (!deleteAllData()){ say("Couldn't delete: this browser isn't letting inlay change its storage.", 4000); return; }
+  location.href = "./";
+};
+
+/* Another tab — the practice page — may have saved a session since. */
+addEventListener("storage", e => {
+  if (e.key && e.key.startsWith("inlay.")){ load(); render(); }
+});
+
+load();
+render();
+watchForUpdates();
+</script>
+</body>
+</html>

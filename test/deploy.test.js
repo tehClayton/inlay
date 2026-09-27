@@ -44,6 +44,8 @@ test("every file a page or module loads is cached", () => {
   const pages = ASSETS.filter(f => /\.(html|js)$/.test(f));
   for (const page of pages){
     for (const ref of localRefs(read(page))){
+      // "./", the app's root: cached as itself, which ASSETS above leaves out.
+      if (ref === ""){ assert.match(sw, /"\.\/",/, `${page} links to ./, which sw.js does not cache`); continue; }
       assert.ok(ASSETS.includes(ref), `${page} loads ${ref}, which sw.js does not cache`);
     }
   }
