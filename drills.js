@@ -224,6 +224,18 @@ export function answerName(p, pref, pc = p.pc){
   return noteName(pc, pref);
 }
 
+/* What a found or revealed note is labelled on the board: its name, or
+   with `labels` "degrees" its degree of the prompt's root — the scale-
+   degree labels a theory drill can show, so the 3rd of A major reads "3",
+   not C♯. Drills with no root always show names. */
+export function answerLabel(p, pref, pc = p.pc, labels = "names"){
+  if (labels === "degrees" && p.rootPc != null) return degreeName(pc, p.rootPc);
+  return answerName(p, pref, pc);
+}
+
+/* The theory drills, which ask from a root and so can label by degree. */
+export const hasRoot = kind => ["interval", "chord", "scale", "nameInterval"].includes(kind);
+
 /* The words for a prompt. `inst` names the string for findOn by its number
    and open note, which is unambiguous even on a guitar's two E strings. The
    find-alls say how far along you are, once you've found any. */

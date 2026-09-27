@@ -145,6 +145,14 @@ test("the scale drill's types and order", () => {
   assert.equal(loadSettings().drillScaleOrder, "up");
 });
 
+test("the theory drills' labels: names by default, or degrees", () => {
+  assert.equal(loadSettings().drillLabels, "names");
+  assert.ok(saveSettings({ drillLabels: "degrees" }));
+  assert.equal(loadSettings().drillLabels, "degrees");
+  saveSettings({ drillLabels: "roman" });
+  assert.equal(loadSettings().drillLabels, "degrees");
+});
+
 test("a bad stored setting falls back without spoiling the rest", () => {
   store.setItem(KEYS.settings, JSON.stringify({ notePref: 7, instrument: "abc", drill: "name" }));
   assert.deepEqual(loadSettings(), { ...SETTINGS_DEFAULTS, instrument: "abc", drill: "name" });

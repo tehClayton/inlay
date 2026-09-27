@@ -69,6 +69,11 @@
   .studybar .chip.sel{background:#E8A33D;border-color:#E8A33D;color:#1A1206;box-shadow:none}
   .studybar .roots{display:grid;grid-template-columns:repeat(12,1fr);gap:4px}
   .studybar .roots .chip{padding:7px 0;min-width:0}
+  /* The scale or chord menu, dressed as the chips beside it. */
+  .setpick{font-family:inherit;font-size:11px;color:var(--ink);padding:6px 8px;
+    background:linear-gradient(var(--raise-a),var(--raise-b));border:1px solid var(--rule);
+    border-radius:var(--r1);cursor:pointer}
+  .setpick:focus-visible{outline:2px solid var(--true);outline-offset:2px}
   .board{flex:1 1 auto;min-height:140px;position:relative;background:var(--panel);
     border-radius:var(--r2);overflow:hidden;display:flex;align-items:center;
     justify-content:center;
@@ -328,7 +333,7 @@ import {
 import { wireBackup, dataNote } from "./data.js";
 import { summarize, MIN_ANSWERS } from "./sessions.js";
 import { newInstrument, summary, pitchAt, stringNumber } from "./instrument.js";
-import { noteName, pitchName, pitchClass, degreeName } from "./theory.js";
+import { noteName, pitchName, pitchClass, degreeName, SCALES, CHORDS } from "./theory.js";
 import { newStudy, studyMarks, studyTap, studySummary } from "./study.js";
 import { renderEditor } from "./editor.js";
 import { createFretboard, createNeckBar } from "./fretboard.js";
@@ -470,7 +475,14 @@ function renderStudy(){
       group("Show", [
         chip(study.show === "tapped", "Frets I tap", () => changeStudy({ ...study, show: "tapped" })),
         chip(study.show === "all", "Every note", () => changeStudy({ ...study, show: "all" })),
+        chip(study.show === "set", "Scale or chord", () => changeStudy({ ...study, show: "set" })),
       ]),
+      // Which scale or chord: a menu, since the library has 23 of them.
+      study.show === "set" ? h("select", { class: "setpick", "aria-label": "Scale or chord",
+        onchange: e => changeStudy({ ...study, set: e.target.value }) },
+        [["scale", "Scales", SCALES], ["chord", "Chords", CHORDS]].map(([kind, title, lib]) =>
+          h("optgroup", { label: title }, Object.entries(lib).map(([id, s]) =>
+            h("option", { value: `${kind}:${id}`, selected: study.set === `${kind}:${id}` }, s.name))))) : null,
       h("span", { class: "lab" }, "As"),
       group("Label as", [
         chip(study.labels === "notes", "Names", () => changeStudy({ ...study, labels: "notes" })),
@@ -493,7 +505,7 @@ function renderStudy(){
 function studyTapped(pos, midi){
   const inst = current();
   changeStudy(studyTap(study, pos));
-  const deg = study.root != null ? ` · ${degreeName(pitchClass(midi), study.root)} above ${noteName(study.root, settings.notePref)}` : "";
+  const deg = study.root != null ? ` · the ${degreeName(pitchClass(midi), study.root)} of ${noteName(study.root, settings.notePref)}` : "";
   fill($("prompt"), h("b", {}, pitchName(midi, settings.notePref)), h("i", {}, `${where(inst, pos)}${deg}`));
   announce(`${pitchName(midi, settings.notePref)}, ${where(inst, pos)}${deg}`);
 }
@@ -514,7 +526,7 @@ function cursorMoved(pos){
   const midi = pitchAt(inst, pos.string, pos.fret);
   const note = practice.running ? "" : `: ${noteName(midi, settings.notePref)}`;
   const deg = !practice.running && study && study.root != null
-    ? `, ${degreeName(pitchClass(midi), study.root)} above ${noteName(study.root, settings.notePref)}` : "";
+    ? `, the ${degreeName(pitchClass(midi), study.root)} of ${noteName(study.root, settings.notePref)}` : "";
   announce(`${where(inst, pos)}${note}${deg}`);
 }
 

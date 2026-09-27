@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   candidates, makePrompt, promptText, isRight, createScore, scoreText, DRILL_KINDS, SLOW_MS,
-  answerName, usesNotes, ALL_INTERVALS, findsAll, needed, naming, DEGREE_LABELS,
+  answerName, usesNotes, ALL_INTERVALS, findsAll, needed, naming, DEGREE_LABELS, answerLabel, hasRoot,
 } from "../drills.js";
 import { newInstrument } from "../instrument.js";
 import { parsePitch, noteName } from "../theory.js";
@@ -258,6 +258,23 @@ test("name the interval: the degree labels, the prompt and the answer", () => {
   assert.equal(promptText(p, guitar(), "sharp"), "What degree of A?");
   assert.equal(answerName(p, "sharp"), DEGREE_LABELS[p.degree]);
   assert.equal(makePrompt("nameInterval", candidates(guitar(), [0, 0], { strings: [0] })), null);
+});
+
+test("scale-degree labels: a theory drill's notes by degree of its root, others by name", () => {
+  const c = candidates(guitar(), [0, 12]);
+  const chord = makePrompt("chord", c, { chords: ["major"], root: 9 });          // A major
+  assert.equal(answerLabel(chord, "sharp", 1), "C♯");
+  assert.equal(answerLabel(chord, "sharp", 1, "names"), "C♯");
+  assert.equal(answerLabel(chord, "sharp", 1, "degrees"), "3");
+  assert.equal(answerLabel(chord, "sharp", 9, "degrees"), "1");
+  const scale = makePrompt("scale", c, { scales: ["dorian"], root: 2 });         // D dorian
+  assert.equal(answerLabel(scale, "sharp", 5, "degrees"), "♭3");
+  const iv = makePrompt("interval", c, { intervals: [7] });
+  assert.equal(answerLabel(iv, "sharp", iv.pc, "degrees"), "5");
+  // No root, no degrees: the note drills keep their names.
+  const any = makePrompt("findAny", c);
+  assert.equal(answerLabel(any, "flat", any.pc, "degrees"), noteName(any.pc, "flat"));
+  assert.ok(hasRoot("chord") && hasRoot("interval") && !hasRoot("findAll"));
 });
 
 test("find on a string: the note on that string only, both octaves in view", () => {

@@ -184,6 +184,8 @@ Each drill is configured by the same filters. A saved combination is a
   are in play (intervals, chord types or scale types), and the root is random unless
   fixed. The naturals filter doesn't apply to them, since a root can be any note.
 - **Order** for scales: any order (the default) or ascending in pitch, a toggle.
+- **Labels** for the theory drills: found and revealed notes by name (the default)
+  or by scale degree of the root, so the 3rd of A major reads "3", not C♯.
 - **Adaptive.** Toggle, described below.
 
 ### Theory library
@@ -225,11 +227,12 @@ board, or highlight a scale or chord shape across the neck. Nothing is recorded.
 
 The **Study** toggle sits beside Start, as millitap's listen toggle sits beside play,
 and a bar under the board holds its choices: show the frets you tap (tap again to
-take a label off) or every note; label them by name or by interval from a root; and
-the root, from twelve buttons. The root's places are marked in millitap's amber,
-since green means right on this board. Starting a run puts study away; its choices
-are kept while the page is open. Scale and chord shapes join in M3, with the library
-they come from.
+take a label off), every note, or a scale or chord from the library, chosen from a
+menu and marked everywhere it's played across the neck; label them by name (a scale
+or chord's spelled for its key) or by interval from a root; and the root, from twelve
+buttons. The root's places are marked in millitap's amber, since green means right
+on this board. Starting a run puts study away; its choices are kept while the page
+is open.
 
 ### Sets
 
