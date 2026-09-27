@@ -6,14 +6,16 @@
    misread. Storage can be blocked outright (private modes, embedded views), so
    reads fall back to empty and writes report failure instead of throwing.
 
-   Sessions and sets join this file in later milestones. */
+   Sets join this file in a later milestone. */
 import { validate as validateInstrument, upgrade as upgradeInstrument } from "./instrument.js";
 import { NOTE_PREFS } from "./theory.js";
 import { DRILL_KINDS } from "./drills.js";
+import { isSession } from "./sessions.js";
 
 export const KEYS = {
   instruments: "inlay.instruments.v1",
   settings:    "inlay.settings.v1",
+  sessions:    "inlay.sessions.v1",
 };
 
 function read(key, fallback){
@@ -26,11 +28,19 @@ function read(key, fallback){
 }
 
 function write(key, value){
+  return tryWrite(key, value) === "ok";
+}
+
+/* "ok", "quota" when storage is full, or "error" for anything else, such as
+   storage being blocked. Browsers name a full store differently. */
+function tryWrite(key, value){
   try {
     localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch {
-    return false;
+    return "ok";
+  } catch (e) {
+    const full = e && (e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED"
+                       || e.code === 22 || e.code === 1014);
+    return full ? "quota" : "error";
   }
 }
 
@@ -57,8 +67,52 @@ export function saveInstrument(inst, now = Date.now()){
   return write(KEYS.instruments, list);
 }
 
+/* Its sessions go with it: history for an instrument that's gone can't be
+   shown against anything. */
 export function deleteInstrument(id){
-  return write(KEYS.instruments, loadInstruments().filter(x => x.id !== id));
+  return deleteSessionsFor(id) && write(KEYS.instruments, loadInstruments().filter(x => x.id !== id));
+}
+
+/* ------------------------------------------------------------- sessions */
+
+export const MAX_SESSIONS = 2000;
+
+/* Every stored session, oldest first; anything malformed is dropped. */
+export function loadSessions(){
+  const list = read(KEYS.sessions, []);
+  return Array.isArray(list) ? list.filter(isSession).sort((a, b) => a.t - b.t) : [];
+}
+
+export const sessionsFor = inst => loadSessions().filter(s => s.inst === inst);
+
+/* Saves a session, replacing any earlier save of the same run (same
+   instrument and start time), so a run saved when the page was hidden and
+   again on Stop is one record. Keeps the newest MAX_SESSIONS. If storage is
+   full, the oldest tenth goes and it tries again, until it fits or there's
+   nothing older left to drop. Returns { ok, pruned }: how many old sessions
+   went to make room, so the page can suggest an export. */
+export function saveSession(s){
+  if (!isSession(s)) return { ok: false, pruned: 0 };
+  let list = loadSessions().filter(x => !(x.inst === s.inst && x.t === s.t));
+  list.push(s);
+  list.sort((a, b) => a.t - b.t);
+  let pruned = 0;
+  if (list.length > MAX_SESSIONS){ pruned = list.length - MAX_SESSIONS; list = list.slice(pruned); }
+  for (;;){
+    const r = tryWrite(KEYS.sessions, list);
+    if (r === "ok") return { ok: true, pruned };
+    const older = list.filter(x => x !== s).length;
+    if (r !== "quota" || !older) return { ok: false, pruned: 0 };
+    const drop = Math.max(1, Math.floor(list.length / 10));
+    list = [...list.filter(x => x !== s).slice(drop), s].sort((a, b) => a.t - b.t);
+    pruned += drop;
+  }
+}
+
+export function deleteSessionsFor(inst){
+  const all = read(KEYS.sessions, null);
+  if (all === null) return true;               // nothing stored, nothing to do
+  return write(KEYS.sessions, loadSessions().filter(s => s.inst !== inst));
 }
 
 /* ------------------------------------------------------------- settings */
