@@ -1,8 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  pitchClass, octave, isNatural, noteName, pitchName, parseNote, parsePitch,
+  pitchClass, octave, isNatural, noteName, pitchName, parseNote, parsePitch, degreeName,
 } from "../theory.js";
+
+test("degree names: the distance above a root, whatever octave either is in", () => {
+  assert.equal(degreeName(9, 9), "1");            // A over A
+  assert.equal(degreeName(0, 9), "♭3");           // C over A
+  assert.equal(degreeName(4, 9), "5");            // E over A
+  assert.equal(degreeName(3, 9), "♯4/♭5");        // D♯ over A
+  assert.equal(degreeName(8, 9), "7");            // G♯ over A
+  assert.equal(degreeName(64, 4), "1");           // E4 over E, a MIDI number works too
+  const all = Array.from({ length: 12 }, (_, i) => degreeName(i, 0));
+  assert.deepEqual(all, ["1", "♭2", "2", "♭3", "3", "4", "♯4/♭5", "5", "♭6", "6", "♭7", "7"]);
+});
 
 test("pitch class and octave follow MIDI, C4 = 60", () => {
   assert.equal(pitchClass(60), 0);

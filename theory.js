@@ -34,6 +34,11 @@ export function noteName(pc, pref = "sharp"){
   return SHARP_NAMES[p];
 }
 
+/* Scale-degree labels: a pitch class named by its distance above a root, as
+   players say it. The tritone is both, being as often one as the other. */
+const DEGREES = ["1", "♭2", "2", "♭3", "3", "4", "♯4/♭5", "5", "♭6", "6", "♭7", "7"];
+export const degreeName = (pc, root) => DEGREES[pitchClass(pc - root)];
+
 /* A pitch with its octave, for tunings: "E2", "C♯4". "both" would make a
    tuning unreadable ("C♯/D♭4"), so it spells sharp here. */
 export function pitchName(midi, pref = "sharp"){

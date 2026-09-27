@@ -56,6 +56,19 @@
   .answers .ans.right{background:var(--true);border-color:var(--true);color:#0C1710}
   .answers .ans.wrong{background:var(--miss);border-color:var(--miss);color:#fff}
   .answers .ans.pending{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+
+  /* Study: beside Start, because it changes what the board does rather than
+     what a drill asks, as millitap's listen toggle sits beside play. */
+  .studybtn{flex:0 0 auto;padding:8px 12px;font-size:12px}
+  .studybtn[aria-pressed="true"]{background:#E8A33D;border-color:#E8A33D;color:#1A1206;font-weight:600}
+  .studybar{flex:0 0 auto;display:grid;gap:4px}
+  .studybar .row{display:flex;align-items:center;gap:var(--sp2);flex-wrap:wrap}
+  .studybar .lab{font-size:10px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;
+    color:var(--ink-mute)}
+  .studybar .chip{padding:6px 10px;font-size:11px}
+  .studybar .chip.sel{background:#E8A33D;border-color:#E8A33D;color:#1A1206;box-shadow:none}
+  .studybar .roots{display:grid;grid-template-columns:repeat(12,1fr);gap:4px}
+  .studybar .roots .chip{padding:7px 0;min-width:0}
   .board{flex:1 1 auto;min-height:140px;position:relative;background:var(--panel);
     border-radius:var(--r2);overflow:hidden;display:flex;align-items:center;
     justify-content:center;
@@ -197,9 +210,12 @@
     </button>
     <div class="prompt" id="prompt" aria-live="polite"></div>
     <output class="score" id="score" aria-live="off"></output>
+    <button id="studyBtn" class="studybtn" type="button" aria-pressed="false" aria-controls="studyBar">Study</button>
     <button id="runBtn" class="runbtn go" type="button">Start</button>
   </div>
   <div class="board" id="board"></div>
+  <!-- Study's choices, under the board while it's on. Nothing here is scored. -->
+  <div class="studybar" id="studyBar" hidden></div>
   <!-- Name the note: one button per note, shown only while that drill runs. -->
   <div class="answers" id="answers" hidden></div>
 </main>
@@ -312,7 +328,8 @@ import {
 import { wireBackup, dataNote } from "./data.js";
 import { summarize, MIN_ANSWERS } from "./sessions.js";
 import { newInstrument, summary, pitchAt, stringNumber } from "./instrument.js";
-import { noteName, pitchName } from "./theory.js";
+import { noteName, pitchName, pitchClass, degreeName } from "./theory.js";
+import { newStudy, studyMarks, studyTap, studySummary } from "./study.js";
 import { renderEditor } from "./editor.js";
 import { createFretboard, createNeckBar } from "./fretboard.js";
 import { lastFrom } from "./instrument.js";
@@ -409,11 +426,76 @@ function tapped(pos, e){
   const inst = current();
   const midi = pitchAt(inst, pos.string, pos.fret);
   if (midi === null) return;
+  if (study){ studyTapped(pos, midi); return; }
   board.clearMarks();
   board.mark(pos, "note", noteName(midi, settings.notePref));
   const where = `string ${stringNumber(pos.string, inst.strings.length)}, ` +
                 (pos.fret === inst.strings[pos.string].start ? "open" : `fret ${pos.fret}`);
   fill($("prompt"), h("b", {}, pitchName(midi, settings.notePref)), h("i", {}, where));
+}
+
+/* --------------------------------------------------------------- study */
+/* Unscored exploring: null when off. Its choices last while the page is
+   open, and a run starting puts it away. */
+let study = null, lastStudy = newStudy();
+
+function setStudy(on){
+  if (on && practice.running) practice.stop();
+  study = on ? lastStudy : null;
+  $("studyBtn").setAttribute("aria-pressed", String(!!study));
+  $("studyBar").hidden = !study;
+  if (!on) board?.clearMarks();
+  renderBoard();
+}
+$("studyBtn").onclick = () => setStudy(!study);
+label($("studyBtn"), "Study — label the neck by note or interval; nothing is scored or saved");
+
+function changeStudy(next){
+  study = lastStudy = next;
+  renderStudy();
+}
+
+/* The study's marks, bar and line, from its state. */
+function renderStudy(){
+  const inst = current();
+  if (!study || !inst || !board) return;
+  board.setMarks(studyMarks(inst, study, settings.notePref));
+  fill($("prompt"), h("b", {}, "Study"), h("i", {}, studySummary(study, settings.notePref)));
+  const chip = (on, text, onclick, role = "radio") => h("button", { class: "chip" + (on ? " sel" : ""),
+    type: "button", role, "aria-checked": String(on), onclick }, text);
+  const group = (name, kids) => h("div", { class: "pick", role: "radiogroup", "aria-label": name }, kids);
+  fill($("studyBar"),
+    h("div", { class: "row" },
+      h("span", { class: "lab" }, "Show"),
+      group("Show", [
+        chip(study.show === "tapped", "Frets I tap", () => changeStudy({ ...study, show: "tapped" })),
+        chip(study.show === "all", "Every note", () => changeStudy({ ...study, show: "all" })),
+      ]),
+      h("span", { class: "lab" }, "As"),
+      group("Label as", [
+        chip(study.labels === "notes", "Names", () => changeStudy({ ...study, labels: "notes" })),
+        chip(study.labels === "degrees", "Intervals", () => changeStudy({ ...study, labels: "degrees" })),
+      ]),
+      study.show === "tapped" && study.picked.size
+        ? h("button", { class: "mini", type: "button", onclick: () => changeStudy({ ...study, picked: new Set() }) }, "Clear")
+        : null),
+    // The root: needed for intervals, and marked on the neck either way.
+    h("div", { class: "roots", role: "radiogroup", "aria-label": "Root" },
+      Array.from({ length: 12 }, (_, pc) => {
+        const b = chip(study.root === pc, noteName(pc, settings.notePref),
+          () => changeStudy({ ...study, root: study.root === pc ? null : pc }));
+        label(b, `Root ${noteName(pc, "both")}${study.root === pc ? " (tap again for none)" : ""}`);
+        return b;
+      })));
+}
+
+/* A tap in study labels the fret, or takes its label off, and says what's there. */
+function studyTapped(pos, midi){
+  const inst = current();
+  changeStudy(studyTap(study, pos));
+  const deg = study.root != null ? ` · ${degreeName(pitchClass(midi), study.root)} above ${noteName(study.root, settings.notePref)}` : "";
+  fill($("prompt"), h("b", {}, pitchName(midi, settings.notePref)), h("i", {}, `${where(inst, pos)}${deg}`));
+  announce(`${pitchName(midi, settings.notePref)}, ${where(inst, pos)}${deg}`);
 }
 
 /* Says what's heard but not seen. Cleared first, so saying the same thing
@@ -429,8 +511,11 @@ function announce(text){
 function cursorMoved(pos){
   const inst = current();
   if (!inst) return;
-  const note = practice.running ? "" : `: ${noteName(pitchAt(inst, pos.string, pos.fret), settings.notePref)}`;
-  announce(`${where(inst, pos)}${note}`);
+  const midi = pitchAt(inst, pos.string, pos.fret);
+  const note = practice.running ? "" : `: ${noteName(midi, settings.notePref)}`;
+  const deg = !practice.running && study && study.root != null
+    ? `, ${degreeName(pitchClass(midi), study.root)} above ${noteName(study.root, settings.notePref)}` : "";
+  announce(`${where(inst, pos)}${note}${deg}`);
 }
 
 function renderBoard(){
@@ -447,8 +532,10 @@ function renderBoard(){
     // A run carries on with a prompt from whatever changed; otherwise, the
     // idle line.
     if (practice.running) practice.rangeChanged();
+    else if (study) renderStudy();
     else fill($("prompt"), h("i", {}, `${summary(inst, settings.notePref)} — tap a fret to name it`));
   } else {
+    if (study){ study = null; $("studyBtn").setAttribute("aria-pressed", "false"); $("studyBar").hidden = true; }
     practice.stop();
     if (board){ board.destroy(); board = null; }
     $("board").classList.remove("live");
@@ -581,7 +668,11 @@ practice = createPractice({
     if (!saveSettings(patch)) say(STORAGE_FAILED);
   },
   // Stopped: the strip goes back to naming what you tap.
-  onChange: running => { if (!running) renderBoard(); },
+  // A run puts study away; stopped, the strip goes back to naming what you tap.
+  onChange: running => {
+    if (running && study){ study = null; $("studyBtn").setAttribute("aria-pressed", "false"); $("studyBar").hidden = true; }
+    if (!running) renderBoard();
+  },
   onSession: keep,
   announce,
 });

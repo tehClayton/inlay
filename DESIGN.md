@@ -47,6 +47,7 @@ Served as-is from the repo root, following millitap's layout:
 | `sessions.js` | Recording a run as a session record, and adding records up |
 | `stats.js` | What the history screen shows: sessions pooled by position, note and string, and the trend's control limits and signals. Pure functions |
 | `charts.js` | The history screen's SVG charts |
+| `study.js` | Study mode: what each fret is labelled. Pure functions |
 | `store.js` | All `localStorage` access, schema versions, migrations, export and import |
 | `backup.js`, `data.js` | Reading, checking and merging a backup file; the Export and Import buttons both pages share |
 | `app.css` | The tokens and shared controls, linked by both pages; each adds its own layout |
@@ -219,6 +220,14 @@ adaptive off, every candidate has weight 1.
 This is an unscored way to explore, like millitap's listen mode. Tap any fret to see
 its note name, or its interval from a chosen root. You can also label the whole
 board, or highlight a scale or chord shape across the neck. Nothing is recorded.
+
+The **Study** toggle sits beside Start, as millitap's listen toggle sits beside play,
+and a bar under the board holds its choices: show the frets you tap (tap again to
+take a label off) or every note; label them by name or by interval from a root; and
+the root, from twelve buttons. The root's places are marked in millitap's amber,
+since green means right on this board. Starting a run puts study away; its choices
+are kept while the page is open. Scale and chord shapes join in M3, with the library
+they come from.
 
 ### Sets
 
