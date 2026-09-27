@@ -160,7 +160,8 @@ One run is one **session**, saved on stop.
 | **Find all in view** | A note name ("Every F♯") | Tap every position of it in view, any order |
 | **Find all on the neck** | A note name ("Every F♯ on the neck") | Tap every position of it from the nut to the last fret, moving along the neck to find the rest |
 | **Name the note** | A highlighted fret | Choose from 12 note buttons, or interval buttons when a root is set |
-| **Interval** | A highlighted root and an interval ("major 3rd above") | Tap any position of the target note inside the window |
+| **Interval** | A highlighted root and an interval ("Major 3rd above A") | Tap the exact pitch that far above the root — not another octave of its note — anywhere it can be played inside the window |
+| **Name the interval** | A highlighted root and a marked fret | Choose from 12 interval buttons (1 ♭2 2 … 7) |
 | **Chord tones** | A chord ("A minor") | Tap every chord tone in the window, any order |
 | **Scale** | A root and scale type ("D dorian, frets 5–8") | Tap every scale tone, in ascending pitch order or any order |
 
@@ -179,9 +180,10 @@ Each drill is configured by the same filters. A saved combination is a
 - **Fret window.** A start and end fret, such as 0–5 or 5–8. The fretboard dims
   everything outside it.
 - **Notes.** All twelve, naturals only, or a custom list.
-- **Root and type** for theory drills, from the built-in library. The root can be
-  fixed or random.
-- **Order** for scales: ascending, or any order.
+- **Root and type** for theory drills, from the built-in library: tick which types
+  are in play (intervals, chord types or scale types), and the root is random unless
+  fixed. The naturals filter doesn't apply to them, since a root can be any note.
+- **Order** for scales: any order (the default) or ascending in pitch, a toggle.
 - **Adaptive.** Toggle, described below.
 
 ### Theory library

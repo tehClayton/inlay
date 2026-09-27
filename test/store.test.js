@@ -103,6 +103,16 @@ test("settings default, merge, and ignore invalid values", () => {
   assert.deepEqual(loadSettings(), want);
 });
 
+test("the interval drill's intervals: all by default, and never none, repeats or strays", () => {
+  assert.deepEqual(loadSettings().drillIntervals, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.ok(saveSettings({ drillIntervals: [3, 4, 7] }));
+  assert.deepEqual(loadSettings().drillIntervals, [3, 4, 7]);
+  for (const bad of [[], [3, 3], [0], [13], "3", [3.5]]){
+    saveSettings({ drillIntervals: bad });
+    assert.deepEqual(loadSettings().drillIntervals, [3, 4, 7], JSON.stringify(bad));
+  }
+});
+
 test("a bad stored setting falls back without spoiling the rest", () => {
   store.setItem(KEYS.settings, JSON.stringify({ notePref: 7, instrument: "abc", drill: "name" }));
   assert.deepEqual(loadSettings(), { ...SETTINGS_DEFAULTS, instrument: "abc", drill: "name" });

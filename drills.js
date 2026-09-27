@@ -5,7 +5,7 @@
    on screen, narrowed by the filters. The frets shown are the practice
    range — zoom in on frets 5–9 and every prompt is in 5–9. */
 import { pitchAt, stringNumber } from "./instrument.js";
-import { pitchClass, isNatural, noteName } from "./theory.js";
+import { pitchClass, isNatural, noteName, INTERVALS, intervalNote } from "./theory.js";
 
 export const DRILLS = Object.freeze({
   findAny:     { name: "Find any",             blurb: "tap the note anywhere in view" },
@@ -13,6 +13,7 @@ export const DRILLS = Object.freeze({
   findAll:     { name: "Find all in view",     blurb: "tap every one of the note in view" },
   findAllNeck: { name: "Find all on the neck", blurb: "every one of the note, nut to last fret" },
   name:        { name: "Name the note",        blurb: "say which note is marked" },
+  interval:    { name: "Interval",             blurb: "tap the pitch an interval above the root" },
 });
 export const DRILL_KINDS = Object.keys(DRILLS);
 
@@ -21,6 +22,13 @@ export const DRILL_KINDS = Object.keys(DRILLS);
    moving along it. */
 export const wholeNeck = kind => kind === "findAllNeck";
 export const findsAll = kind => kind === "findAll" || kind === "findAllNeck";
+
+/* The theory drills ask from a root, which can be any note, so the naturals
+   filter is the note drills' alone. */
+export const usesNotes = kind => kind !== "interval";
+
+/* Every interval, by its semitones: what the interval drill asks by default. */
+export const ALL_INTERVALS = Object.freeze(INTERVALS.map(i => i.semis));
 
 /* What can be asked: every playable position in frets [first, last], on the
    strings allowed (null is all), of the notes allowed ("all" or
@@ -47,8 +55,9 @@ const samePos = (a, b) => a.string === b.string && a.fret === b.fret;
    `last` is the previous prompt, so the same one never comes twice running
    when there's anything else to ask. Returns null when there's nothing to
    ask at all. */
-export function makePrompt(kind, cands, { rng = Math.random, last = null } = {}){
+export function makePrompt(kind, cands, { rng = Math.random, last = null, intervals = ALL_INTERVALS } = {}){
   if (!cands.length) return null;
+  if (kind === "interval") return intervalPrompt(cands, { rng, last, intervals });
   const pcs = [...new Set(cands.map(c => c.pc))];
   const build = () => {
     if (kind === "name"){
@@ -75,6 +84,47 @@ export function makePrompt(kind, cands, { rng = Math.random, last = null } = {})
   return p;
 }
 
+/* An interval prompt: a root in range, and an interval above it whose exact
+   pitch is also in range — that pitch, not any octave of its note, is the
+   answer, wherever on the neck it can be played in view. The interval is
+   chosen evenly among those that can be asked, then the root among the
+   places it can be asked from, so a wide interval that fits only a few
+   roots comes up as often as a narrow one. */
+function intervalPrompt(cands, { rng, last, intervals }){
+  const at = new Map();
+  for (const c of cands){
+    if (!at.has(c.midi)) at.set(c.midi, []);
+    at.get(c.midi).push(c);
+  }
+  const askable = new Map();          // semis → roots it can be asked from
+  for (const semis of intervals){
+    const roots = cands.filter(c => at.has(c.midi + semis));
+    if (roots.length) askable.set(semis, roots);
+  }
+  if (!askable.size) return null;
+  const build = () => {
+    const semis = pick([...askable.keys()], rng);
+    const root = pick(askable.get(semis), rng);
+    const targets = at.get(root.midi + semis);
+    return {
+      kind: "interval", semis, pc: targets[0].pc,
+      root: { string: root.string, fret: root.fret }, rootPc: root.pc,
+      targets, key: `interval:${root.string}:${root.fret}:${semis}`,
+    };
+  };
+  let p = build();
+  for (let tries = 0; last && p.key === last.key && tries < 12; tries++) p = build();
+  return p;
+}
+
+/* What a prompt's answer is called: an interval's note spelled from its
+   root, so a major 3rd above A is C♯ whatever the preference; any other
+   drill's, by the preference. */
+export function answerName(p, pref){
+  if (p.kind === "interval") return intervalNote(p.rootPc, p.semis, pref).name;
+  return noteName(p.pc, pref);
+}
+
 /* The words for a prompt. `inst` names the string for findOn by its number
    and open note, which is unambiguous even on a guitar's two E strings. The
    find-alls say how far along you are, once you've found any. */
@@ -89,6 +139,10 @@ export function promptText(p, inst, pref, found = 0){
     return `Every ${note}${where}` + (found ? ` · ${found} of ${p.targets.length}` : "");
   }
   if (p.kind === "name") return "Name this note";
+  if (p.kind === "interval"){
+    const iv = INTERVALS.find(i => i.semis === p.semis);
+    return `${iv.name[0].toUpperCase()}${iv.name.slice(1)} above ${noteName(p.rootPc, pref)}`;
+  }
   return note;
 }
 

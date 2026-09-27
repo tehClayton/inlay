@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   candidates, makePrompt, promptText, isRight, createScore, scoreText, DRILL_KINDS, SLOW_MS,
+  answerName, usesNotes, ALL_INTERVALS,
 } from "../drills.js";
 import { newInstrument } from "../instrument.js";
 import { parsePitch, noteName } from "../theory.js";
@@ -58,6 +59,64 @@ test("every kind of prompt's targets answer it", () => {
       }
     }
   }
+});
+
+test("interval: the exact pitch above the root, everywhere it can be played in view", () => {
+  const c = candidates(guitar(), [0, 12]), rng = seeded(3);
+  for (let i = 0; i < 200; i++){
+    const p = makePrompt("interval", c, { rng });
+    const root = c.find(x => x.string === p.root.string && x.fret === p.root.fret);
+    assert.ok(ALL_INTERVALS.includes(p.semis));
+    assert.equal(p.rootPc, root.pc);
+    assert.ok(p.targets.length >= 1);
+    // Every target is that very pitch — no other octave — and every place
+    // in view that plays it is a target.
+    assert.ok(p.targets.every(t => t.midi === root.midi + p.semis));
+    assert.equal(p.targets.length, c.filter(x => x.midi === root.midi + p.semis).length);
+  }
+});
+
+test("interval: another octave of the right note is wrong", () => {
+  const c = candidates(guitar(), [0, 12]), rng = seeded(5);
+  for (let i = 0; i < 100; i++){
+    const p = makePrompt("interval", c, { rng });
+    const want = p.targets[0].midi;
+    for (const x of c.filter(x => x.pc === p.pc && x.midi !== want)) assert.ok(!isRight(p, x));
+  }
+});
+
+test("interval: only the intervals chosen, each as often as the others", () => {
+  const c = candidates(guitar(), [0, 12]), rng = seeded(9);
+  const seen = {};
+  for (let i = 0; i < 3000; i++){
+    const p = makePrompt("interval", c, { rng, intervals: [3, 7, 12] });
+    seen[p.semis] = (seen[p.semis] ?? 0) + 1;
+  }
+  assert.deepEqual(Object.keys(seen).map(Number).sort((a, b) => a - b), [3, 7, 12]);
+  for (const n of Object.values(seen)) assert.ok(n > 850 && n < 1150, `${n} of 3000`);
+});
+
+test("interval: nothing to ask when no interval fits in view", () => {
+  // One string, three frets: nothing is an octave away.
+  const c = candidates(guitar(), [1, 3], { strings: [0] });
+  assert.equal(makePrompt("interval", c, { intervals: [12] }), null);
+  assert.ok(makePrompt("interval", c, { intervals: [12, 1] }));
+});
+
+test("interval: the prompt and its answer, spelled from the root", () => {
+  // Frets 0–4 on the A string alone: a major 3rd above open A is C♯ at 4.
+  const c = candidates(guitar(), [0, 4], { strings: [1] });
+  const p = makePrompt("interval", c, { intervals: [4] });
+  assert.equal(p.root.fret, 0);
+  assert.deepEqual(p.targets.map(t => t.fret), [4]);
+  assert.equal(promptText(p, guitar(), "flat"), "Major 3rd above A");
+  assert.equal(answerName(p, "flat"), "C♯");             // not D♭: it's a 3rd
+  assert.equal(answerName({ kind: "findAny", pc: 1 }, "flat"), "D♭");
+});
+
+test("the naturals filter is the note drills' alone", () => {
+  assert.ok(usesNotes("findAny") && usesNotes("name"));
+  assert.ok(!usesNotes("interval"));
 });
 
 test("find on a string: the note on that string only, both octaves in view", () => {

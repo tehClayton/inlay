@@ -9,7 +9,7 @@
    Sets join this file in a later milestone. */
 import { validate as validateInstrument, upgrade as upgradeInstrument } from "./instrument.js";
 import { NOTE_PREFS } from "./theory.js";
-import { DRILL_KINDS } from "./drills.js";
+import { DRILL_KINDS, ALL_INTERVALS } from "./drills.js";
 import { isSession } from "./sessions.js";
 
 export const KEYS = {
@@ -159,6 +159,7 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   instrument: null,      // id of the instrument last used
   drill: "findOn",       // the drill last chosen: see drills.js
   drillNotes: "all",     // all | naturals
+  drillIntervals: ALL_INTERVALS,   // the interval drill's intervals, as semitones
   lastExport: null,      // when a backup was last exported from this device, ms
 });
 
@@ -167,6 +168,8 @@ const SETTINGS_VALID = {
   instrument: v => v === null || typeof v === "string",
   drill: v => DRILL_KINDS.includes(v),
   drillNotes: v => v === "all" || v === "naturals",
+  drillIntervals: v => Array.isArray(v) && v.length > 0 && new Set(v).size === v.length &&
+    v.every(s => ALL_INTERVALS.includes(s)),
   lastExport: v => v === null || (Number.isFinite(v) && v > 0),
 };
 
