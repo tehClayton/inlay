@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   select, drillsOf, byPosition, byNote, byString, overall, trend, limits, MIN_HEAT,
-  fmtPct, fmtTime, fmtSpread, fmtDur, heat, ramp, MIN_MISS_SCALE,
+  fmtPct, fmtTime, fmtSpread, fmtDur, heat, ramp, MIN_MISS_SCALE, signals,
 } from "../stats.js";
 import { createRecorder, summarize } from "../sessions.js";
 import { newInstrument } from "../instrument.js";
@@ -100,11 +100,20 @@ test("trend: a point per session, in order, with its totals", () => {
   assert.equal(tr[0].label, s1.label);
 });
 
-test("limits: the mean plus and minus 2.66 average moving ranges", () => {
+test("limits: the mean plus and minus three sigmas, from the average moving range", () => {
   const l = limits([10, 12, 11, 13]);           // moving ranges 2, 1, 2
+  const sigma = (5 / 3) / 1.128;
   assert.ok(near(l.centre, 11.5));
-  assert.ok(near(l.hi, 11.5 + 2.66 * 5 / 3));
-  assert.ok(near(l.lo, 11.5 - 2.66 * 5 / 3));
+  assert.ok(near(l.sigma, sigma));
+  assert.ok(near(l.hi, 11.5 + 3 * sigma));
+  assert.ok(near(l.lo, 11.5 - 3 * sigma));
+  assert.ok(Math.abs(3 * sigma - 2.66 * 5 / 3) < 0.01);   // the familiar 2.66
+});
+
+test("limits can be clamped to what the quantity can be", () => {
+  const l = limits([0.9, 1, 0.8, 1], { range: [0, 1] });
+  assert.equal(l.hi, 1);
+  assert.ok(l.lo >= 0 && l.lo < 0.9);
 });
 
 test("limits on a log scale sit evenly either side by ratio, not difference", () => {
@@ -114,11 +123,55 @@ test("limits on a log scale sit evenly either side by ratio, not difference", ()
   assert.ok(l.lo > 0);
 });
 
-test("limits skip missing values and need two points", () => {
+test("limits skip missing values, need two points, and none for a flat line", () => {
   assert.equal(limits([]), null);
   assert.equal(limits([5, null]), null);
-  assert.deepEqual(limits([5, null, 5]), { centre: 5, lo: 5, hi: 5 });
+  assert.equal(limits([5, null, 5]), null);
   assert.equal(limits([0, 1000], { log: true }), null);
+  assert.ok(limits([5, null, 6]));
+});
+
+/* Noise that stays well inside its limits: alternating around 10. */
+const calm = n => Array.from({ length: n }, (_, i) => 10 + (i % 2 ? 1 : -1));
+
+test("signals: none in steady noise", () => {
+  assert.ok(signals(calm(20)).every(f => f.length === 0));
+});
+
+test("signals, rule 1: a point outside the limits", () => {
+  const v = [...calm(20), 30];
+  const f = signals(v);
+  assert.ok(f[20].includes(1));
+  assert.ok(f.slice(0, 20).every(x => !x.includes(1)));
+});
+
+test("signals, rule 2: eight in a row on one side, flagged from the eighth", () => {
+  // calm(13) ends below the centre, so the run starts after it.
+  const v = [...calm(13), 10.5, 10.6, 10.5, 10.7, 10.5, 10.6, 10.5, 10.6];
+  const f = signals(v);
+  const at = f.map((x, i) => x.includes(2) ? i : -1).filter(i => i >= 0);
+  assert.deepEqual(at, [20]);
+});
+
+test("signals, rule 3: six in a row moving one way", () => {
+  const v = [...calm(10), 10, 10.1, 10.2, 10.3, 10.4, 10.5];
+  const f = signals(v);
+  assert.ok(f[15].includes(3));
+  assert.ok(!f[14].includes(3));
+});
+
+test("signals, rule 5: two of three past two sigmas on one side", () => {
+  // 17 sits about 2.5 sigmas above this series' centre: past 2, inside 3.
+  const f = signals([...calm(16), 17, 10, 17]);
+  assert.deepEqual(f.slice(16), [[], [], [5]]);
+});
+
+test("signals work on logged values, and step over sessions with no value", () => {
+  const v = [...calm(20).map(x => x * 100), null, 5000];
+  const f = signals(v, { log: true });
+  assert.deepEqual(f[20], []);
+  assert.ok(f[21].includes(1));
+  assert.equal(f.length, v.length);
 });
 
 test("formatting: a dash for nothing, never a zero that looks like a result", () => {

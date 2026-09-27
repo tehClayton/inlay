@@ -69,6 +69,27 @@
   .detail{font-size:12px;color:var(--ink-dim);min-height:1.6em}
   .detail b{color:var(--ink);font-weight:600}
 
+  /* Charts, as millitap draws them. Marks wear classes, not inline colours. */
+  :root{ --c-grid:rgba(147,164,183,.14); --c-axis:rgba(147,164,183,.62); }
+  .chart{position:relative;width:100%;min-width:0}
+  .chart svg{display:block;width:100%;height:auto;font-family:var(--fig)}
+  .gl{stroke:var(--c-grid);stroke-width:1}
+  .ax{fill:var(--c-axis);font-size:9px}
+  .trend{fill:none;stroke:var(--ink-dim);stroke-width:2;stroke-opacity:.4;stroke-linejoin:round}
+  .pt{fill:var(--ink-dim);stroke:var(--panel);stroke-width:2}
+  /* Limits are reference, not data: dashed and recessive. The centre line is
+     solid, because it's a fact about you rather than a threshold. */
+  .lim{stroke:var(--ink-mute);stroke-width:1.25;stroke-dasharray:5 4;stroke-opacity:.75}
+  .cl{stroke:var(--ink-dim);stroke-width:1.25;stroke-opacity:.6}
+  .limlab{fill:var(--ink-mute);font-size:8px;letter-spacing:.06em;opacity:.85}
+  .sigring{fill:none;stroke:var(--miss);stroke-width:1.75;stroke-opacity:.9}
+  .legend .sig{display:inline-block;width:10px;height:10px;border-radius:50%;
+    border:2px solid var(--miss);vertical-align:-1px}
+  #tip{position:fixed;z-index:40;pointer-events:none;display:grid;gap:2px;max-width:260px;
+    background:var(--panel-hi);border:1px solid var(--rule);border-radius:var(--r1);
+    padding:7px 10px;font-size:11px;color:var(--ink-dim);box-shadow:0 10px 28px rgba(0,0,0,.5)}
+  #tip b{color:var(--ink);font-weight:600}
+
   .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   table{width:100%;border-collapse:collapse;font-size:12px}
   th{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
@@ -139,6 +160,21 @@
           <p class="detail" id="heatDetail" aria-live="polite"></p>
         </section>
 
+        <!-- How it's going, session by session. The limits are your own
+             session-to-session noise: a ringed point is more than that, and
+             in practice usually the good kind. -->
+        <section class="card">
+          <h2>Typical time over sessions <span class="hint">lower is quicker · ringed points are signals</span></h2>
+          <div class="chart" id="cTime"></div>
+          <div class="legend" id="lTime"></div>
+        </section>
+
+        <section class="card">
+          <h2>Accuracy over sessions <span class="hint">higher is surer · ringed points are signals</span></h2>
+          <div class="chart" id="cAcc"></div>
+          <div class="legend" id="lAcc"></div>
+        </section>
+
         <section class="card">
           <h2>Sessions <span class="hint">newest first</span></h2>
           <div class="tablewrap" id="table"></div>
@@ -176,6 +212,7 @@
   </main>
 </div>
 
+<div id="tip" hidden></div>
 <div id="msg" role="status" aria-live="polite"></div>
 <button id="toast" type="button" hidden>Updated — tap to reload</button>
 
@@ -184,9 +221,10 @@ import { $, h, fill, say, watchForUpdates } from "./ui.js";
 import { loadInstruments, loadSessions, loadSettings, deleteAllData } from "./store.js";
 import { wireBackup, dataNote } from "./data.js";
 import {
-  select, drillsOf, overall, trend, byPosition, heat, ramp, MIN_HEAT,
+  select, drillsOf, overall, trend, byPosition, heat, ramp, MIN_HEAT, SPC_MIN, SPC_FIRM,
   fmtPct, fmtTime, fmtSpread, fmtDur,
 } from "./stats.js";
+import { controlChart } from "./charts.js";
 import { createFretboard } from "./fretboard.js";
 import { VIEW_PRESETS, pitchAt } from "./instrument.js";
 import { noteName } from "./theory.js";
@@ -257,7 +295,42 @@ function render(){
   $("report").hidden = false;
   renderTiles(mine);
   renderHeat(inst, mine);
+  renderTrends(mine);
   renderTable(mine);
+}
+
+/* --------------------------------------------------------------- trends */
+function renderTrends(mine){
+  const pts = trend(mine);
+  const parts = (p, headline) => () => [
+    h("b", {}, headline), h("span", {}, p.label),
+    h("span", {}, `${when(p.t)} · ${p.answers} answer${p.answers === 1 ? "" : "s"}`),
+  ];
+  const time = controlChart($("cTime"), {
+    name: "Typical time", log: true, fmt: fmtTime, tip: $("tip"),
+    axis: ms => `${+(ms / 1000).toFixed(2)} s`,
+    points: pts.map(p => ({ t: p.t, value: p.typicalMs, parts: parts(p, `typical ${fmtTime(p.typicalMs)}`) })),
+  });
+  const acc = controlChart($("cAcc"), {
+    name: "Accuracy", range: [0, 1], fmt: fmtPct, tip: $("tip"),
+    points: pts.map(p => ({ t: p.t, value: p.accuracy, parts: parts(p, `${fmtPct(p.accuracy)} right`) })),
+  });
+  trendLegend($("lTime"), time, pts.length);
+  trendLegend($("lAcc"), acc, pts.length);
+}
+
+/* Says what the limits and rings mean, or why there aren't any yet. */
+function trendLegend(host, { limits: k, signals: n }, sessions){
+  if (sessions < SPC_MIN){
+    fill(host, h("span", {}, `Limits appear after ${SPC_MIN} sessions — ${sessions} so far`));
+    return;
+  }
+  if (!k){ fill(host, h("span", {}, "No limits: every session came out the same")); return; }
+  fill(host,
+    h("span", { class: "sig", "aria-hidden": "true" }),
+    h("span", {}, n ? `${n} signal${n === 1 ? "" : "s"}: sessions outside your usual range, or a run that moved it`
+                    : "No signals — steady"),
+    sessions < SPC_FIRM ? h("span", {}, `· limits are provisional until ${SPC_FIRM} sessions`) : null);
 }
 
 /* ------------------------------------------------------------- heatmap */
@@ -387,6 +460,13 @@ $("wipeGo").onclick = () => {
 /* Another tab — the practice page — may have saved a session since. */
 addEventListener("storage", e => {
   if (e.key && e.key.startsWith("inlay.")){ load(); render(); }
+});
+
+/* The charts are drawn to their width, so a new width redraws them. */
+let resized = 0;
+addEventListener("resize", () => {
+  cancelAnimationFrame(resized);
+  resized = requestAnimationFrame(render);
 });
 
 load();
