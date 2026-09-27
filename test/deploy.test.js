@@ -70,6 +70,19 @@ test("every cached module parses", async () => {
   }
 });
 
+/* The browser's replaceChildren prints a null as the text "null" — twice now
+   on screen ("Every Enull"). Page code fills elements through ui.js's fill(),
+   which skips them; only emptying an element, with no arguments, may call
+   replaceChildren directly. The fretboard's SVG code builds arrays with no
+   gaps in them, and is the one other exception. */
+test("page code fills elements through fill(), never replaceChildren with contents", () => {
+  const pageFiles = ASSETS.filter(f => /\.(html|js)$/.test(f) && f !== "ui.js" && f !== "fretboard.js");
+  for (const f of pageFiles){
+    const calls = [...read(f).matchAll(/\.replaceChildren\(\s*([^)\s])/g)];
+    assert.equal(calls.length, 0, `${f} calls replaceChildren with contents; use fill()`);
+  }
+});
+
 /* A page's own logic lives in an inline module script, which nothing else
    parses before a browser does. Each one is written out with its relative
    imports made absolute and loaded here. It then fails at run time, reaching

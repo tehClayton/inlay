@@ -10,7 +10,7 @@
    Times run from the frame the prompt was drawn in to the tap's own
    timestamp — both on the page's performance clock, and neither delayed by
    how long the page took to handle anything in between. */
-import { $, h, label, say, openPanel, closePanel, isOpen } from "./ui.js";
+import { $, h, fill, label, say, openPanel, closePanel, isOpen } from "./ui.js";
 import {
   DRILLS, DRILL_KINDS, candidates, makePrompt, promptText, isRight, createScore, scoreText,
   wholeNeck, findsAll,
@@ -87,7 +87,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     const show = running && prompt && prompt.kind === "name";
     row.hidden = !show;
     if (!show) return;
-    row.replaceChildren(...Array.from({ length: 12 }, (_, pc) => {
+    fill(row, ...Array.from({ length: 12 }, (_, pc) => {
       let cls = "ans";
       if (state !== "asking" && chosen !== null){
         if (pc === prompt.pc) cls += " right";
@@ -110,7 +110,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
     $("score").textContent = scoreText(score);
     if (running && prompt){
       // Which fret is marked is plain to see; a screen reader has to be told.
-      $("prompt").replaceChildren(h("b", {}, promptText(prompt, getInst(), pref(), found.length)),
+      fill($("prompt"), h("b", {}, promptText(prompt, getInst(), pref(), found.length)),
         prompt.kind === "name" ? h("span", { class: "sr" }, `: ${where(getInst(), prompt.pos)}`) : null);
     }
   }
@@ -345,7 +345,7 @@ export function createPractice({ board, getInst, getFrom, getSettings, saveSetti
       [["all", "All notes"], ["naturals", "Naturals only"]].map(([v, t]) =>
         chip(s.drillNotes === v, t, null, () => { saveSettings({ drillNotes: v }); renderPanel(); changed(); })));
 
-    $("drillPanel").replaceChildren(
+    fill($("drillPanel"),
       h("div", { class: "sect" }, h("h2", { id: "drillKindLabel" }, "Drill"), kinds),
       h("div", { class: "sect" },
         h("h2", {}, "Strings ", h("span", { class: "hint" }, "tap to leave one out")),

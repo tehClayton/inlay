@@ -478,7 +478,7 @@
 
 <script type="module">
 import {
-  $, h, label, say, showVersion, watchForUpdates,
+  $, h, fill, label, say, showVersion, watchForUpdates,
   initPanels, openPanel, closePanel, isOpen,
 } from "./ui.js";
 import {
@@ -589,7 +589,7 @@ function tapped(pos, e){
   board.mark(pos, "note", noteName(midi, settings.notePref));
   const where = `string ${stringNumber(pos.string, inst.strings.length)}, ` +
                 (pos.fret === inst.strings[pos.string].start ? "open" : `fret ${pos.fret}`);
-  $("prompt").replaceChildren(h("b", {}, pitchName(midi, settings.notePref)), h("i", {}, where));
+  fill($("prompt"), h("b", {}, pitchName(midi, settings.notePref)), h("i", {}, where));
 }
 
 /* Says what's heard but not seen. Cleared first, so saying the same thing
@@ -613,7 +613,7 @@ function renderBoard(){
   const inst = current();
   $("instName").textContent = inst ? inst.name : "No instrument";
   label($("instBtn"), inst ? `Instrument: ${inst.name}. Switch or edit` : "Set up an instrument");
-  if (!practice.running) $("prompt").replaceChildren();
+  if (!practice.running) fill($("prompt"));
   if (inst) from = Math.min(from, lastFrom(inst));   // frets may have been edited down
   renderNeckCtl(inst);
   if (inst){
@@ -623,12 +623,12 @@ function renderBoard(){
     // A run carries on with a prompt from whatever changed; otherwise, the
     // idle line.
     if (practice.running) practice.rangeChanged();
-    else $("prompt").replaceChildren(h("i", {}, `${summary(inst, settings.notePref)} — tap a fret to name it`));
+    else fill($("prompt"), h("i", {}, `${summary(inst, settings.notePref)} — tap a fret to name it`));
   } else {
     practice.stop();
     if (board){ board.destroy(); board = null; }
     $("board").classList.remove("live");
-    $("board").replaceChildren(h("div", { class: "boardinfo" },
+    fill($("board"), h("div", { class: "boardinfo" },
       h("p", { class: "empty" }, "Tell inlay what you play: strings, tuning and frets."),
       h("button", { class: "go", onclick: e => edit(null, e.currentTarget) }, "Set up an instrument")));
   }
@@ -647,7 +647,7 @@ function use(inst){
 
 function renderInstruments(){
   const cur = current();
-  $("instRows").replaceChildren(...instruments.map(inst => {
+  fill($("instRows"), ...instruments.map(inst => {
     const pick = h("button", { class: "pickme", onclick: () => { use(inst); closePanel($("instPanel")); } },
       h("b", {}, inst.name), h("i", {}, summary(inst, settings.notePref)));
     if (inst === cur) pick.setAttribute("aria-current", "true");
@@ -705,7 +705,7 @@ function edit(inst, opener){
 /* ------------------------------------------------------------- settings */
 function renderSettings(){
   const labels = { sharp: "Sharps", flat: "Flats", both: "Both" };
-  $("notePick").replaceChildren(...Object.entries(labels).map(([pref, text]) => {
+  fill($("notePick"), ...Object.entries(labels).map(([pref, text]) => {
     const on = settings.notePref === pref;
     const b = h("button", {
       class: "chip" + (on ? " sel" : ""), role: "radio", "aria-checked": String(on),

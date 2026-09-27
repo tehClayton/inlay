@@ -31,6 +31,15 @@ export function h(tag, attrs = {}, ...kids){
   return el;
 }
 
+/* Replaces an element's contents, skipping null and false the way h() does.
+   The browser's own replaceChildren prints a null as the text "null", which
+   is how "Every Enull" reached the screen; page code fills elements through
+   this instead (a test holds it to that). */
+export function fill(el, ...kids){
+  el.replaceChildren(...kids.flat().filter(k => k != null && k !== false));
+  return el;
+}
+
 /* ---------------------------------------------------------------- panels */
 /* Settings, the instrument list and the editor are panels over one scrim.
    They stack — the editor opens from the list and closes back to it — so
