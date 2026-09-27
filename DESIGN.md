@@ -101,8 +101,10 @@ practice on one never shows up in another's heatmap.
 - **Any string count and any tuning.** The editor lets you add, remove and retune
   strings freely. Tunings are entered as note plus octave (`E2`, `D#3`).
 - **Changing tuning after practice.** Retuning or restringing an instrument that
-  already has history asks first. The user either starts a new instrument (the
-  default) or keeps the history, which is then keyed by string and fret, not by pitch.
+  already has history asks first. The user either saves it as a new instrument,
+  leaving the old one and its history as they were (the default), or changes it
+  anyway, keeping the history, which is keyed by string and fret, not by pitch.
+  Frets, name, hand and view don't ask: they don't change what note a position is.
 - **Inlay markers.** The fretboard draws dot markers at 3, 5, 7, 9, 12 (double),
   15, 17, 19, 21 and 24.
 
@@ -269,22 +271,29 @@ record small enough for thousands to fit in a shared quota:
 
 ```js
 {
-  t: 1790000000000,          // start time, ms
+  t: 1790000000000,          // start time, ms; with inst, identifies the run
   inst: "uuid",              // instrument id
-  drill: "find",             // drill type
-  key: "find:s0-5:f0-12:nat",// canonical config, groups sessions of the same drill
-  label: "Find the note — naturals, frets 0–12",
-  dur: 184000,               // ms from start to stop
-  pos: {                     // per position touched, "string:fret"
-    "0:3": [n, miss, sumLn, sumLn2],
+  drill: "findOn",           // drill type
+  key: "findOn:naturals:all",// drill, notes and strings: groups sessions of the same drill
+  label: "Find on a string · naturals",
+  dur: 184000,               // ms from start to the last answer
+  pos: {                     // per position answered, "string:fret"
+    "0:3": [n, miss, timed, sumLn, sumLn2],
     ...
   }
 }
 ```
 
-- **Only positions touched are stored.** Typical time and spread for any grouping
-  (position, pitch class, string or overall) are computed from `n`, `sumLn` and
-  `sumLn2` by summing.
+- **Only positions answered are stored.** `timed` counts the right answers fast
+  enough to time (under 15 s); `sumLn` and `sumLn2` are over those. Accuracy,
+  typical time and spread for any grouping (position, pitch class, string or
+  overall) come from adding them up.
+- **Which position.** A right answer counts at the fret found. In the find drills a
+  miss counts at the fret wrongly tapped, the one whose note was got wrong; in name
+  the note, both count at the marked fret.
+- **When it's saved.** On Stop, and whenever the page is hidden mid-run, in case it
+  isn't coming back; saving the same run again replaces it. Changing the drill or its
+  filters mid-run saves the run so far and starts a new session.
 - **Size and cap.** A typical session of about 50 answers is roughly 1 KB, and at
   most **2,000** sessions are kept, oldest pruned first.
 - **Minimum length.** Sessions with fewer than 5 answers are not saved.

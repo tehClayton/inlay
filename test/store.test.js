@@ -3,15 +3,31 @@ import assert from "node:assert/strict";
 import {
   KEYS, loadInstruments, saveInstrument, deleteInstrument,
   loadSettings, saveSettings, SETTINGS_DEFAULTS,
+  loadSessions, sessionsFor, saveSession, deleteSessionsFor, MAX_SESSIONS,
 } from "../store.js";
 import { newInstrument, VIEW_PRESETS } from "../instrument.js";
+import { createRecorder } from "../sessions.js";
+
+/* A small real session for instrument `inst`, started at t. */
+function session(inst, t, answers = 5){
+  const r = createRecorder({ inst, drill: "findOn", t });
+  for (let i = 0; i < answers; i++) r.add({ string: i % 6, fret: i % 12 }, i % 4 !== 0, 900 + i * 10, t + i);
+  return r.record();
+}
 
 /* A stand-in for localStorage, with a switch to make it behave the way a
    blocked or full store does: every access throws. */
 class FakeStorage {
-  constructor(){ this.m = new Map(); this.broken = false; }
+  constructor(){ this.m = new Map(); this.broken = false; this.limit = Infinity; }
   getItem(k){ if (this.broken) throw new Error("blocked"); return this.m.has(k) ? this.m.get(k) : null; }
-  setItem(k, v){ if (this.broken) throw new Error("blocked"); this.m.set(k, String(v)); }
+  setItem(k, v){
+    if (this.broken) throw new Error("blocked");
+    // Full: the total stored would pass the limit, as a browser's quota does.
+    let size = String(v).length;
+    for (const [key, val] of this.m) if (key !== k) size += val.length;
+    if (size > this.limit){ const e = new Error("full"); e.name = "QuotaExceededError"; throw e; }
+    this.m.set(k, String(v));
+  }
   removeItem(k){ if (this.broken) throw new Error("blocked"); this.m.delete(k); }
 }
 
@@ -89,6 +105,72 @@ test("a bad stored setting falls back without spoiling the rest", () => {
   assert.deepEqual(loadSettings(), { ...SETTINGS_DEFAULTS, instrument: "abc", drill: "name" });
 });
 
+test("sessions save, load oldest first, and group by instrument", () => {
+  const a = newInstrument(), b = newInstrument();
+  assert.deepEqual(saveSession(session(a, 300)), { ok: true, pruned: 0 });
+  saveSession(session(b, 200));
+  saveSession(session(a, 100));
+  assert.deepEqual(loadSessions().map(s => s.t), [100, 200, 300]);
+  assert.deepEqual(sessionsFor(a.id).map(s => s.t), [100, 300]);
+});
+
+test("saving the same run again replaces it rather than adding another", () => {
+  const a = newInstrument();
+  saveSession(session(a, 100, 5));
+  saveSession(session(a, 100, 9));             // saved when hidden, then on Stop
+  const list = loadSessions();
+  assert.equal(list.length, 1);
+  assert.equal(Object.values(list[0].pos).reduce((n, v) => n + v[0], 0), 9);
+});
+
+test("malformed sessions are refused on save and dropped on load", () => {
+  const a = newInstrument();
+  assert.equal(saveSession({ t: 1 }).ok, false);
+  store.setItem(KEYS.sessions, JSON.stringify([session(a, 5), { junk: true }, null]));
+  assert.equal(loadSessions().length, 1);
+});
+
+test("only the newest MAX_SESSIONS are kept", () => {
+  const a = newInstrument();
+  const many = Array.from({ length: MAX_SESSIONS }, (_, i) => session(a, i + 1, 1));
+  store.setItem(KEYS.sessions, JSON.stringify(many));
+  const r = saveSession(session(a, MAX_SESSIONS + 1, 5));
+  assert.deepEqual(r, { ok: true, pruned: 1 });
+  const list = loadSessions();
+  assert.equal(list.length, MAX_SESSIONS);
+  assert.equal(list[0].t, 2);                  // the oldest went
+});
+
+test("a full store drops the oldest tenth and tries again", () => {
+  const a = newInstrument();
+  for (let t = 1; t <= 40; t++) saveSession(session(a, t));
+  store.limit = store.m.get(KEYS.sessions).length;   // exactly full
+  const r = saveSession(session(a, 41));
+  assert.ok(r.ok);
+  assert.ok(r.pruned >= 4, `pruned ${r.pruned}`);
+  const list = loadSessions();
+  assert.equal(list.at(-1).t, 41);             // the new one is kept
+  assert.ok(list[0].t > 1);                    // the oldest went
+});
+
+test("if even one session won't fit, the save fails and nothing is lost", () => {
+  const a = newInstrument();
+  saveSession(session(a, 1));
+  const before = store.m.get(KEYS.sessions);
+  store.limit = 10;
+  assert.deepEqual(saveSession(session(a, 2)), { ok: false, pruned: 0 });
+  assert.equal(store.m.get(KEYS.sessions), before);
+});
+
+test("deleting an instrument deletes its sessions, and only its", () => {
+  const a = newInstrument(), b = newInstrument();
+  saveInstrument(a); saveInstrument(b);
+  saveSession(session(a, 1)); saveSession(session(b, 2));
+  assert.ok(deleteInstrument(a.id));
+  assert.deepEqual(loadSessions().map(s => s.inst), [b.id]);
+  assert.ok(deleteSessionsFor("nobody"));
+});
+
 test("blocked storage reads empty and reports failed writes", () => {
   store.broken = true;
   assert.deepEqual(loadInstruments(), []);
@@ -96,4 +178,6 @@ test("blocked storage reads empty and reports failed writes", () => {
   assert.equal(saveInstrument(newInstrument()), false);
   assert.equal(saveSettings({ notePref: "flat" }), false);
   assert.equal(deleteInstrument("x"), false);
+  assert.deepEqual(loadSessions(), []);
+  assert.deepEqual(saveSession(session(newInstrument(), 1)), { ok: false, pruned: 0 });
 });

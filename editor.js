@@ -20,7 +20,7 @@ const SMALL_TARGET = 14;
 /* Renders into `root`. `inst` is the instrument being edited, or a fresh one
    from newInstrument() when `isNew`. `boardSize` is the practice board's
    size, so the editor can warn when a view makes frets too small there. */
-export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, onCancel, onDelete }){
+export function renderEditor(root, { inst, isNew, history = 0, notePref, boardSize, onSave, onCancel, onDelete }){
   root._preview?.destroy();
   const draft = {
     name: inst.name,
@@ -122,8 +122,29 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
     return errs.length === 0;
   }
 
+  /* Changing an instrument's strings changes which note every recorded
+     position was, so with history behind it, Save asks first: keep the old
+     one as it was and save this as another (the default), or change it
+     anyway and keep the history by string and fret. */
+  const ask = h("div", { class: "ask", hidden: true });
   function commit(){
-    if (check()) onSave(build());
+    if (!check()) return;
+    const out = build();
+    if (!isNew && history > 0 && stringsChanged(inst, out)){
+      ask.hidden = false;
+      ask.replaceChildren(
+        h("p", { class: "note" }, `${inst.name} has ${history} practice session${history === 1 ? "" : "s"} ` +
+          `recorded against its strings. Changing them changes which note each of those answers was.`),
+        h("div", { class: "btns" },
+          h("button", { type: "button", onclick: () => { ask.hidden = true; } }, "Back"),
+          h("span", { class: "grow" }),
+          h("button", { type: "button", onclick: () => onSave(out) }, "Change this one"),
+          h("button", { class: "go", type: "button", onclick: () => onSave(out, { asNew: true }) },
+            "Save as a new instrument")));
+      ask.querySelector(".go").focus();
+      return;
+    }
+    onSave(out);
   }
 
   const checkbox = (key, text) => h("label", { class: "check" },
@@ -271,6 +292,7 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
       warn),
     h("div", { class: "sect actions" },
       err,
+      ask,
       h("div", { class: "btns" },
         isNew ? null : h("button", { class: "mini warn", onclick: () => onDelete(inst) }, "Delete"),
         h("span", { class: "grow" }),
@@ -280,6 +302,13 @@ export function renderEditor(root, { inst, isNew, notePref, boardSize, onSave, o
   root.setAttribute("aria-labelledby", "editTitle");
   drawRows();
   check();
+}
+
+/* The same strings, in the same order, tuned the same? Frets and the view
+   don't matter: they don't change what note a string and fret is. */
+export function stringsChanged(a, b){
+  return a.strings.length !== b.strings.length ||
+    a.strings.some((s, i) => s.open !== b.strings[i].open || s.start !== b.strings[i].start);
 }
 
 /* validate() counts strings from the face side, 1-based; people count them
