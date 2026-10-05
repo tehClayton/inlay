@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newStudy, studyLabel, studyMarks, studyTap, studySummary } from "../study.js";
+import { newStudy, studyLabel, studyMarks, studyTap, studySummary, studySet } from "../study.js";
 import { newInstrument } from "../instrument.js";
 
 const inst = newInstrument();               // E2 A2 D3 G3 B3 E4, 22 frets; string 0 is low E
@@ -94,4 +94,45 @@ test("the summary says what the board is showing", () => {
   assert.equal(studySummary({ ...newStudy(), labels: "degrees" }), "tap frets to label them · choose a root for intervals");
   assert.equal(studySummary({ ...newStudy(), labels: "degrees", root: 10 }, "flat"),
                "tap frets to label them · intervals from B♭");
+});
+
+test("a scale or chord: every place across the neck that plays one of its notes", () => {
+  const s = { ...newStudy(), show: "set", set: "scale:minorPentatonic", root: A };   // A C D E G
+  const marks = studyMarks(inst, s);
+  const want = new Set(["A", "C", "D", "E", "G"]);
+  assert.ok(marks.length > 0);
+  assert.ok(marks.every(m => want.has(m.text)));
+  assert.equal(new Set(marks.map(m => m.text)).size, 5);
+  // Every such place, and no other.
+  const all = studyMarks(inst, { ...newStudy(), show: "all" });
+  assert.equal(marks.length, all.filter(m => want.has(m.text)).length);
+  assert.ok(marks.filter(m => m.text === "A").every(m => m.kind === "root"));
+  assert.ok(marks.filter(m => m.text !== "A").every(m => m.kind === "note"));
+});
+
+test("a scale or chord is spelled for its key, or labelled by degree", () => {
+  const f = { ...newStudy(), show: "set", set: "scale:major", root: 5 };            // F major
+  assert.ok(studyMarks(inst, f, "sharp").some(m => m.text === "B♭"));
+  assert.ok(!studyMarks(inst, f, "sharp").some(m => m.text === "A♯"));
+  const deg = studyMarks(inst, { ...f, labels: "degrees" });
+  assert.deepEqual([...new Set(deg.map(m => m.text))].sort(), ["1", "2", "3", "4", "5", "6", "7"]);
+  const c = { ...newStudy(), show: "set", set: "chord:dim7", root: 0 };
+  assert.deepEqual([...new Set(studyMarks(inst, c).map(m => m.text))].sort(), ["B♭♭", "C", "E♭", "G♭"]);
+});
+
+test("a scale or chord needs a root; taps don't change it", () => {
+  const s = { ...newStudy(), show: "set", set: "chord:dom7" };
+  assert.deepEqual(studyMarks(inst, s), []);
+  assert.equal(studySummary(s), "choose a root for the dominant 7 chord");
+  assert.equal(studyTap(s, at(0, 3)), s);
+  const t = { ...s, root: 1 };
+  assert.equal(studySummary(t, "flat"), "D♭ dominant 7");
+  assert.equal(studySummary({ ...t, labels: "degrees" }, "flat"), "D♭ dominant 7 · as intervals");
+});
+
+test("study sets name the library", () => {
+  assert.deepEqual(studySet("scale:dorian"), { kind: "scale", id: "dorian", name: "dorian", formula: "1 2 ♭3 4 5 6 ♭7" });
+  assert.equal(studySet("chord:dom7").name, "dominant 7");
+  assert.equal(studySet("scale:bebop"), null);
+  assert.equal(studySet("mode:major"), null);
 });
